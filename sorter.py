@@ -91,24 +91,35 @@ class PhotoClassifier:
         self.master.quit()
 
     def next_image(self):
+        # 保存当前图片的分类
         if self.current_image_index < len(self.image_paths):
             current_image_path = self.image_paths[self.current_image_index]
             selected_labels = [label for label, btn_var in self.label_buttons if btn_var.get()]
             self.classifications[current_image_path] = selected_labels
-            self.current_image_index += 1  # 确保这里正确地增加了索引
-            for _, btn_var in self.label_buttons:
-                btn_var.set(False)  # Reset the button state for the next image
 
-            if self.current_image_index % 10 == 0 or self.current_image_index == len(self.image_paths):
+            # 保存分类结果和进度
+            if self.current_image_index % 10 == 0 or self.current_image_index == len(self.image_paths) - 1:
                 self.save_classifications()
                 self.save_progress()
 
-            if self.current_image_index < len(self.image_paths):
-                self.show_image()
-            else:
+        # 尝试找到下一张未分类或空分类的图片
+        while self.current_image_index < len(self.image_paths):
+            self.current_image_index += 1  # 移动到下一张图片
+            if self.current_image_index >= len(self.image_paths):
                 print("没有更多图片了")
                 self.save_classifications()  # Save at the end
                 self.save_progress(final=True)
+                break
+
+            next_image_path = self.image_paths[self.current_image_index]
+            # 检查下一张图片是否未分类或空分类
+            if next_image_path not in self.classifications or not self.classifications[next_image_path]:
+                for _, btn_var in self.label_buttons:
+                    btn_var.set(False)  # Reset the button state for the next image
+                self.show_image()
+                break
+
+
 
     def show_image(self):
         # 在显示新图片之前重置所有标签按钮的选中状态
