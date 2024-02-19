@@ -1,7 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox
 from PIL import Image, ImageTk
-import json
+import cv2
+import json 
 import os
 
 class PhotoViewer(tk.Toplevel):
@@ -15,17 +16,25 @@ class PhotoViewer(tk.Toplevel):
         self.title(os.path.basename(photo_path))
         self.geometry("800x650")
 
-        self.original_img = Image.open(photo_path)
-        self.scale = 1.0  # 初始化缩放比例
-        self.img_width, self.img_height = self.original_img.size
-        self.calculate_initial_scale()  # 计算初始缩放比例
+        # 使用OpenCV加载和转换图像
+        self.cv_img = cv2.imread(photo_path)
+        self.cv_img = cv2.cvtColor(self.cv_img, cv2.COLOR_BGR2RGB)
+        self.img_height, self.img_width = self.cv_img.shape[:2]
 
-        self.canvas = tk.Canvas(self, width=800, height=600)
-        self.canvas.pack()
-
-        # 初始化图像位置为中心
+        # 初始化图像缩放比例和位置
+        self.scale = 1.0
+        self.calculate_initial_scale()
         self.image_position_x = (800 - self.img_width * self.scale) / 2
         self.image_position_y = (600 - self.img_height * self.scale) / 2
+
+        self.canvas = tk.Canvas(self, width=800, height=600, bg='black')
+        self.canvas.pack()
+
+        # 绑定滚轮事件用于缩放
+        self.canvas.bind("<MouseWheel>", self.zoom_image)
+        # 绑定鼠标事件用于平移
+        self.canvas.bind("<ButtonPress-1>", self.start_pan)
+        self.canvas.bind("<B1-Motion>", self.pan_image)
 
         self.display_image()
 
@@ -36,27 +45,22 @@ class PhotoViewer(tk.Toplevel):
         self.change_category_button = tk.Button(self, text="修改分类", command=self.change_category)
         self.change_category_button.pack()
 
-        # 绑定滚轮事件用于缩放
-        self.canvas.bind("<MouseWheel>", self.zoom_image)
-        # 绑定鼠标事件用于平移
-        self.canvas.bind("<ButtonPress-1>", self.start_pan)
-        self.canvas.bind("<B1-Motion>", self.pan_image)
-
     def calculate_initial_scale(self):
+        # 根据窗口大小计算初始缩放比例
         scale_x = 800 / self.img_width
         scale_y = 600 / self.img_height
         self.scale = min(scale_x, scale_y)
 
     def zoom_image(self, event):
-        x = event.x - self.canvas.canvasx(0)
-        y = event.y - self.canvas.canvasy(0)
+        # 计算缩放比例并更新图像位置，以鼠标位置为缩放中心
+        x = event.x - self.image_position_x
+        y = event.y - self.image_position_y
         old_scale = self.scale
         scale_change = 1.1 if event.delta > 0 else 0.9
         self.scale *= scale_change
 
-        # 调整图像位置，以鼠标位置为缩放中心
-        self.image_position_x = x - (x - self.image_position_x) * (self.scale / old_scale)
-        self.image_position_y = y - (y - self.image_position_y) * (self.scale / old_scale)
+        self.image_position_x = event.x - x * scale_change
+        self.image_position_y = event.y - y * scale_change
 
         self.display_image()
 
@@ -65,21 +69,19 @@ class PhotoViewer(tk.Toplevel):
         self.pan_start_y = event.y
 
     def pan_image(self, event):
-        dx = event.x - self.pan_start_x
-        dy = event.y - self.pan_start_y
-        self.image_position_x += dx
-        self.image_position_y += dy
+        self.image_position_x += event.x - self.pan_start_x
+        self.image_position_y += event.y - self.pan_start_y
 
         self.pan_start_x = event.x
         self.pan_start_y = event.y
         self.display_image()
 
     def display_image(self):
-        img_resized = self.original_img.resize(
-            (int(self.img_width * self.scale), int(self.img_height * self.scale)),
-            Image.Resampling.LANCZOS)
-        self.photo_image = ImageTk.PhotoImage(img_resized)
-        self.canvas.delete("all")  # 清除之前的图像
+        resized_img = cv2.resize(self.cv_img, (int(self.img_width * self.scale), int(self.img_height * self.scale)), interpolation=cv2.INTER_LINEAR)
+        pil_img = Image.fromarray(resized_img)
+        self.photo_image = ImageTk.PhotoImage(image=pil_img)
+
+        self.canvas.delete("all")
         self.canvas.create_image(self.image_position_x, self.image_position_y, anchor="nw", image=self.photo_image)
 
     def change_category(self):
@@ -89,9 +91,9 @@ class PhotoViewer(tk.Toplevel):
             new_categories = [c.strip() for c in new_category.split(',')]
             if set(new_categories) != set(self.photo_categories):
                 self.photo_categories = new_categories
-                categories_str = ", ".join(new_categories)
-                self.info_label.config(text=f"当前分类: {categories_str}")
                 self.update_callback(self.photo_path, new_categories)
+                self.info_label.config(text=f"当前分类: {', '.join(new_categories)}")
+
 
 class ClassifiedPhotoAlbum:
     def __init__(self, master, classifications_file):
