@@ -14,7 +14,7 @@ class PhotoClassifier:
         self.classifications = self.load_classifications()
         self.label_buttons = []
         self.progress_file = 'progress.json'
-        self.key_bindings = "`1234567890-=\\qwertyuiop[]"  # 按键绑定到分类标签
+        self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./"  # 按键绑定到分类标签
 
         self.master.title("照片分类器")
 
@@ -42,8 +42,10 @@ class PhotoClassifier:
         self.save_and_exit_button = Button(master, text="保存并退出", command=self.save_and_exit)
         self.save_and_exit_button.pack()
 
-        self.master.bind('<c>', self.copy_last_classification)
+        self.master.bind('<space>', self.copy_last_classification)
         self.master.bind('<Return>', lambda event: self.next_image())
+        self.master.bind('<BackSpace>', self.show_prev_image)
+
 
         self.load_progress()
         self.show_image()
@@ -51,6 +53,7 @@ class PhotoClassifier:
     def init_label_buttons(self):
         first_row_keys = "`1234567890-=\\"
         second_row_keys = "qwertyuiop[]"
+        third_row_keys = "asdfghjkl;'"
         # 对于每个标签，计算其应该放在哪一行哪一列
         for i, label in enumerate(self.labels):
             display_text = f"{self.key_bindings[i]}: {label}" if i < len(self.key_bindings) else label
@@ -66,8 +69,6 @@ class PhotoClassifier:
         # 使用grid布局并指定行和列
         button.grid(row=row, column=column, sticky='w')
         self.label_buttons.append((label, btn_var))
-
-
 
 
     def toggle_label_via_key(self, label):
@@ -119,7 +120,7 @@ class PhotoClassifier:
         else:
             print("没有更多图片了")
 
-    def show_prev_image(self):
+    def show_prev_image(self, event = None):
         if self.current_image_index > 1:  # 确保有上一张图片可以显示
             self.current_image_index -= 1
             self.show_image()
@@ -139,30 +140,39 @@ class PhotoClassifier:
         new_label = self.new_label_entry.get().strip()
         if new_label and new_label not in self.labels:
             self.labels.append(new_label)
-            self.save_labels()
-            
-            # 计算新标签的索引
-            label_index = len(self.labels) - 1
-            first_row_keys = "`1234567890-=\\"
-            second_row_keys = "qwertyuiop[]"
-            
-            # 确定新标签应该放在哪一行哪一列
-            if label_index < len(first_row_keys):
-                row = 0
-                column = label_index  # 第一行直接使用索引作为列号
-            elif label_index < len(first_row_keys) + len(second_row_keys):
-                row = 1
-                column = label_index - len(first_row_keys)  # 第二行需要减去第一行的长度
+            self.save_labels()  # 保存新的标签列表到文件
+
+            # 为新标签计算按键绑定（如果可用）
+            key_binding_index = len(self.labels) - 1  # 新标签的索引
+            if key_binding_index < len(self.key_bindings):
+                display_text = f"{self.key_bindings[key_binding_index]}: {new_label}"
+                # 绑定按键事件
+                self.master.bind(self.key_bindings[key_binding_index], lambda event, l=new_label: self.toggle_label_via_key(l))
             else:
-                # 如果有更多行，继续按照这种方式计算行和列
-                row = 2  # 这里只是示例，具体行号需要根据实际情况计算
-                column = label_index - (len(first_row_keys) + len(second_row_keys))
-            
-            # 生成显示文本
-            display_text = f"{self.key_bindings[label_index]}: {new_label}" if label_index < len(self.key_bindings) else new_label
+                display_text = new_label  # 没有可用的按键绑定
+
+            # 计算新标签应该放在哪一行哪一列
+            row, column = self.calculate_row_column_for_new_label(key_binding_index)
+
+            # 添加新的标签按钮
             self.add_label_button_gui(new_label, display_text, row, column)
-            self.new_label_entry.delete(0, END)
-            self.master.focus_set()
+            self.new_label_entry.delete(0, 'end')  # 清空输入框
+
+    def calculate_row_column_for_new_label(self, key_binding_index):
+        # 假设每行最多放置的按键数量
+        if key_binding_index <=13:
+            row = 1
+            column = key_binding_index
+        elif key_binding_index<=13+12:
+            row = 2
+            column = key_binding_index - 13
+        elif key_binding_index <= 13+12+11:
+            row = 3
+            column = key_binding_index - 25
+        else:
+            row = 4
+            column = key_binding_index - 36
+        return row, column
 
     def update_label_buttons(self):
         if self.current_image_index < len(self.image_paths):
