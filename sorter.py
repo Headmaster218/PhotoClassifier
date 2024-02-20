@@ -1,3 +1,5 @@
+from pathlib import Path
+from tkinter import filedialog, messagebox
 import cv2
 import os
 import numpy as np
@@ -6,9 +8,10 @@ from PIL import Image, ImageTk
 import json
 
 class PhotoClassifier:
-    def __init__(self, master, image_paths):
+    def __init__(self, master):
         self.master = master
-        self.image_paths = image_paths
+        image_path = self.load_path()  # 加载路径
+        self.image_paths = find_images(image_path)
         self.labels_file = 'labels.json'
         self.labels = self.load_labels()
         self.classifications = self.load_classifications()
@@ -17,6 +20,13 @@ class PhotoClassifier:
         self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./"  # 按键绑定到分类标签
 
         self.master.title("照片分类器")
+
+        self.path_entry = Entry(master)
+        self.path_entry.pack()
+        self.path_entry.insert(0, self.load_path())  # 显示当前路径
+
+        self.change_path_button = Button(master, text="修改路径", command=self.change_path)
+        self.change_path_button.pack()
 
         self.image_label = Label(master)
         self.image_label.pack()
@@ -49,6 +59,35 @@ class PhotoClassifier:
 
         self.load_progress()
         self.show_image()
+
+    def save_path(self, new_path):
+        data = {'image_path': new_path}
+        Path('path.json').write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding='utf-8')
+
+
+    def load_path(self):
+        path_file = Path('path.json')
+        if path_file.exists():
+            data = json.loads(path_file.read_text(encoding='utf-8'))
+            return data.get('image_path')
+        else:
+            new_path = filedialog.askdirectory()
+            if new_path:
+                self.save_path(new_path)
+                return new_path
+            else:
+                messagebox.showerror("错误", "未选择路径，程序将退出")
+                self.master.quit()
+                return None
+
+    def change_path(self):
+        new_path = filedialog.askdirectory()
+        if new_path:
+            self.save_path(new_path)  # 保存新路径到path.json
+            self.path_entry.delete(0, END)
+            self.path_entry.insert(0, new_path)  # 更新文本框显示
+            self.image_paths = find_images(new_path)  # 更新图片路径列表
+            self.show_image()  # 显示新路径下的第一张图片
 
     def init_label_buttons(self):
         first_row_keys = "`1234567890-=\\"
@@ -139,13 +178,27 @@ class PhotoClassifier:
 
 
     def display_image(self, image_path):
-        img = cv2.imread(image_path)
-        img = cv2.resize(img, (640, 480))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = Image.fromarray(img)
-        imgtk = ImageTk.PhotoImage(image=img)
-        self.image_label.imgtk = imgtk
-        self.image_label.configure(image=imgtk)
+        # 尝试使用pathlib处理路径，以提高兼容性
+        image_path = Path(image_path)
+        
+        # 读取图片文件的二进制数据
+        try:
+            img_data = image_path.read_bytes()  # 读取图片数据
+            img_array = np.frombuffer(img_data, np.uint8)  # 将数据转换为numpy数组
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)  # 用OpenCV解码图片数据
+            if img is None:
+                raise IOError("无法加载图片")
+        except Exception as e:
+            messagebox.showerror("错误", f"加载图片失败：{e}")
+            return
+        
+        # 接下来是图片处理和显示的代码
+        img = cv2.resize(img, (960, 720))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # 将BGR转换为RGB
+        img_pil = Image.fromarray(img)
+        img_tk = ImageTk.PhotoImage(image=img_pil)
+        self.image_label.imgtk = img_tk
+        self.image_label.configure(image=img_tk)
 
     def add_new_label(self):
         new_label = self.new_label_entry.get().strip()
@@ -170,20 +223,23 @@ class PhotoClassifier:
             self.new_label_entry.delete(0, 'end')  # 清空输入框
 
     def calculate_row_column_for_new_label(self, key_binding_index):
-        # 假设每行最多放置的按键数量
-        if key_binding_index <=13:
-            row = 1
-            column = key_binding_index
-        elif key_binding_index<=13+12:
-            row = 2
-            column = key_binding_index - 13
-        elif key_binding_index <= 13+12+11:
-            row = 3
-            column = key_binding_index - 25
-        else:
-            row = 4
-            column = key_binding_index - 36
-        return row, column
+        # 定义每行最多放置的按键数量
+        keys_per_row = [14, 12, 11, 10]  # 举例，根据实际情况调整
+        total_keys_passed = 0
+
+        # 计算应该在哪一行
+        for row, keys_count in enumerate(keys_per_row):
+            if key_binding_index < total_keys_passed + keys_count:
+                # 计算列位置
+                column = key_binding_index - total_keys_passed
+                return row, column
+            total_keys_passed += keys_count
+
+        # 如果键绑定索引超出了定义的行，放置在最后一行，并计算列位置
+        # 注意：这种情况理应不发生，如果发生则可能是key_binding_index计算错误
+        return len(keys_per_row) - 1, key_binding_index - total_keys_passed
+
+
 
     def update_label_buttons(self):
         if self.current_image_index < len(self.image_paths):
@@ -242,8 +298,7 @@ def find_images(directory):
 
 def main():
     root = Tk()
-    image_paths = find_images("Z:/Backup/DCIM")
-    app = PhotoClassifier(root, image_paths)
+    app = PhotoClassifier(root)  # 不再需要在这里传递image_paths
     root.mainloop()
 
 if __name__ == "__main__":

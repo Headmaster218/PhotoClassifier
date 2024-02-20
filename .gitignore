@@ -1,1 +1,7 @@
 *.json
+
+tempCodeRunnerFile.py
+
+build/
+
+dist/
