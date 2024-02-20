@@ -1,9 +1,10 @@
 import tkinter as tk
-from tkinter import ttk, simpledialog, messagebox
+from tkinter import ttk, simpledialog, messagebox, filedialog
 from PIL import Image, ImageTk
 import cv2
 import json 
 import os
+import shutil  # 用于文件复制
 
 class PhotoViewer(tk.Toplevel):
     def __init__(self, master, photo_path, all_categories, photo_categories, update_callback):
@@ -107,23 +108,102 @@ class ClassifiedPhotoAlbum:
         self.photos_per_page = self.rows * self.columns
         self.current_page = 0
 
-        self.category_combobox = ttk.Combobox(master, state="readonly")
+        self.master.state('zoomed')
+
+        # 筛选条件UI设置
+        filter_frame = tk.Frame(master)
+        filter_frame.pack(fill=tk.X)
+
+        tk.Label(filter_frame, text="分类1:").pack(side=tk.LEFT, padx=5)
+        self.category_combobox1 = ttk.Combobox(filter_frame, state="readonly", postcommand=self.update_comboboxes)
+        tk.Label(filter_frame, text="条件:").pack(side=tk.LEFT, padx=5)
+        self.filter_type_combobox = ttk.Combobox(filter_frame, state="readonly", values=["且", "或", "除了", "无"])
+        tk.Label(filter_frame, text="分类2:").pack(side=tk.LEFT, padx=5)
+        self.category_combobox2 = ttk.Combobox(filter_frame, state="readonly")
+
+        self.category_combobox1.pack(side=tk.LEFT, padx=5)
+        self.filter_type_combobox.pack(side=tk.LEFT, padx=5)
+        self.filter_type_combobox.bind("<<ComboboxSelected>>", self.filter_type_selected)
+        self.category_combobox2.pack(side=tk.LEFT, padx=5)
+
+        self.export_button = tk.Button(filter_frame, text="导出结果", command=self.export_results)
+        self.export_button.pack(side=tk.RIGHT, padx=5)
+
+
+        # 分页和跳转UI设置
+        navigation_frame = tk.Frame(master)
+        navigation_frame.pack(fill=tk.X)
+
+        self.page_info_label = tk.Label(navigation_frame, text="页码: 1/1")
+        self.page_info_label.pack(side=tk.LEFT, padx=5)
+
+        self.goto_page_entry = ttk.Entry(navigation_frame, width=5)
+        self.goto_page_entry.pack(side=tk.LEFT, padx=5)
+
+        self.goto_page_button = tk.Button(navigation_frame, text="跳转", command=self.goto_page)
+        self.goto_page_button.pack(side=tk.LEFT, padx=5)
+
         self.photos_frame = tk.Frame(master)
-        self.navigation_frame = tk.Frame(master)
-        self.prev_page_button = tk.Button(self.navigation_frame, text="上一页", command=self.show_prev_page)
-        self.next_page_button = tk.Button(self.navigation_frame, text="下一页", command=self.show_next_page)
+        self.photos_frame.pack(expand=True, fill=tk.BOTH)
 
-        self.all_categories = self.get_all_categories()
-        self.category_combobox['values'] = list(self.all_categories)
-        self.category_combobox.bind("<<ComboboxSelected>>", self.category_selected)
-        self.category_combobox.pack()
+        # 更新所有下拉框的选项
+        self.update_comboboxes()
 
-        self.photos_frame.pack()
-        self.navigation_frame.pack()
-        self.prev_page_button.pack(side=tk.LEFT)
-        self.next_page_button.pack(side=tk.RIGHT)
 
-        self.current_category_photos = []
+    def update_display(self, event=None):
+        selected_category1 = self.category_combobox1.get()
+        selected_category2 = self.category_combobox2.get()
+        filter_type = self.filter_type_combobox.get()
+
+        if selected_category1 == "无":
+            self.current_category_photos = list(self.photos.keys())
+        elif filter_type == "且":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if selected_category1 in labels and selected_category2 in labels]
+        elif filter_type == "或":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if selected_category1 in labels or selected_category2 in labels and selected_category2 != "无"]
+        elif filter_type == "除了":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if selected_category1 in labels and selected_category2 not in labels]
+
+        self.current_page = 0
+        self.update_pagination_info()
+        self.display_photos()
+
+    def update_comboboxes(self):
+        all_categories = ["无"] + self.get_all_categories()
+        self.category_combobox1['values'] = all_categories
+        self.category_combobox2['values'] = all_categories
+        self.category_combobox1.bind("<<ComboboxSelected>>", self.category_selected)
+        self.category_combobox2.bind("<<ComboboxSelected>>", self.category_selected)
+
+    def filter_type_selected(self, event=None):
+        if self.filter_type_combobox.get() == "无":
+            self.category_combobox2.set("无")
+            self.category_combobox2['state'] = 'disabled'
+        else:
+            self.category_combobox2['state'] = 'readonly'
+
+
+    def export_results(self):
+        export_folder = filedialog.askdirectory()
+        if export_folder:
+            for photo_path in self.current_category_photos:
+                shutil.copy(photo_path, os.path.join(export_folder, os.path.basename(photo_path)))
+            messagebox.showinfo("导出完成", f"已导出到{export_folder}")
+
+    def update_pagination_info(self):
+        total_pages = max(1, (len(self.current_category_photos) - 1) // self.photos_per_page + 1)
+        self.page_info_label.config(text=f"页码: {self.current_page + 1}/{total_pages}")
+
+    def goto_page(self):
+        try:
+            page = int(self.goto_page_entry.get()) - 1
+            if 0 <= page < (len(self.current_category_photos) // self.photos_per_page + 1):
+                self.current_page = page
+                self.display_photos()
+            else:
+                messagebox.showerror("错误", "无效的页码")
+        except ValueError:
+            messagebox.showerror("错误", "请输入有效的页码数字")
 
     def load_classifications(self):
         with open(self.classifications_file, 'r', encoding='utf-8') as file:
@@ -135,11 +215,33 @@ class ClassifiedPhotoAlbum:
             categories.update(labels)
         return list(categories)
 
-    def category_selected(self, event):
-        self.current_category = self.category_combobox.get()
-        self.current_category_photos = [photo for photo, labels in self.photos.items() if self.current_category in labels]
+    # 确保当"无"被选中时，第二个下拉框被禁用
+    def filter_type_selected(self, event=None):
+        super().filter_type_selected(event)
+        if self.filter_type_combobox.get() == "无":
+            self.category_combobox2.set("无")
+            self.category_combobox2['state'] = 'disabled'
+        else:
+            self.category_combobox2['state'] = 'readonly'
+
+    def category_selected(self, event=None):
+        filter_type = self.filter_type_combobox.get()
+        category1 = self.category_combobox1.get()
+        category2 = self.category_combobox2.get()
+
+        if filter_type == "无":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels or category1 == "无"]
+        elif filter_type == "且":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels and category2 in labels]
+        elif filter_type == "或":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels or category2 in labels]
+        elif filter_type == "除了":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels and category2 not in labels]
+
         self.current_page = 0
+        self.update_pagination_info()
         self.display_photos()
+
 
     def display_photos(self):
         for widget in self.photos_frame.winfo_children():
