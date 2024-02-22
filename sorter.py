@@ -90,17 +90,16 @@ class PhotoClassifier:
             self.show_image()  # 显示新路径下的第一张图片
 
     def init_label_buttons(self):
-        first_row_keys = "`1234567890-=\\"
-        second_row_keys = "qwertyuiop[]"
-        third_row_keys = "asdfghjkl;'"
-        # 对于每个标签，计算其应该放在哪一行哪一列
         for i, label in enumerate(self.labels):
             display_text = f"{self.key_bindings[i]}: {label}" if i < len(self.key_bindings) else label
             # 使用默认参数锁定每次循环中lambda表达式的变量值
-            self.master.bind(self.key_bindings[i], lambda event, l=label: self.toggle_label_via_key(l) if i < len(self.key_bindings) else None)
-            row = 0 if i < len(first_row_keys) else 1
-            column = i if row == 0 else i - len(first_row_keys)
+            self.master.bind(self.key_bindings[i], lambda event, l=label, i=i: self.toggle_label_via_key(l) if i < len(self.key_bindings) else None)
+            
+            # 使用calculate_row_column_for_new_label来计算行和列
+            row, column = self.calculate_row_column_for_new_label(i)
+            
             self.add_label_button_gui(label, display_text, row, column)
+
 
     def add_label_button_gui(self, label, display_text, row, column):
         btn_var = BooleanVar()
