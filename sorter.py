@@ -134,9 +134,15 @@ class PhotoClassifier:
         if self.current_image_index < len(self.image_paths):
             current_image_path = self.image_paths[self.current_image_index]
             selected_labels = [label for label, btn_var in self.label_buttons if btn_var.get()]
-            self.classifications[current_image_path] = selected_labels
 
-            # 保存分类结果和进度
+            # 仅当有选中的标签时，才保存当前图片的分类
+            if selected_labels:  # 检查selected_labels非空
+                self.classifications[current_image_path] = selected_labels
+            else:
+                # 如果没有选中的标签，则确保不保存当前图片路径
+                self.classifications.pop(current_image_path, None)
+
+            # 每10张图片保存一次分类结果和进度，或者在最后一张图片时保存
             if self.current_image_index % 10 == 0 or self.current_image_index == len(self.image_paths) - 1:
                 self.save_classifications()
                 self.save_progress()
@@ -157,6 +163,7 @@ class PhotoClassifier:
                     btn_var.set(False)  # Reset the button state for the next image
                 self.show_image()
                 break
+
 
 
 
