@@ -309,10 +309,12 @@ class ClassifiedPhotoAlbum:
         self.stop_video_flag.set()  # 设置停止标志以停止视频播放
 
     def play_video(self, video_path, widget):
+        # 保存原始图片引用
+        original_image = widget.cget("image")
         cap = cv2.VideoCapture(video_path)
-        fps = int(cap.get(cv2.CAP_PROP_FPS))  # 获取视频帧率
-        wait_time = max(1, int(1000 / fps))  # 计算等待时间，至少为1ms
-        while not self.stop_video_flag.is_set():  # 使用停止标志控制循环
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        wait_time = max(1, int(1000 / fps))
+        while not self.stop_video_flag.is_set():
             ret, frame = cap.read()
             if ret:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -320,11 +322,16 @@ class ClassifiedPhotoAlbum:
                 img.thumbnail((300, 300))
                 photo_image = ImageTk.PhotoImage(img)
                 widget.config(image=photo_image)
-                widget.image = photo_image  # 防止垃圾回收
+                widget.image = photo_image
                 cv2.waitKey(wait_time)
             else:
                 break
         cap.release()
+        # 当停止播放时，恢复原始图片
+        self.stop_video_flag.clear()
+        widget.config(image=original_image)
+        widget.image = original_image
+
 
 
     def open_photo_viewer(self, photo_path):
