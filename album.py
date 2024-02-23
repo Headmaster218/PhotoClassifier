@@ -1,7 +1,7 @@
 import threading
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox, filedialog
-from PIL import Image, ImageTk, UnidentifiedImageError
+from PIL import Image, ImageTk, UnidentifiedImageError, ImageDraw, ImageFont
 import cv2
 import json 
 import os
@@ -286,20 +286,27 @@ class ClassifiedPhotoAlbum:
             try:
                 img = Image.open(photo_path)
                 img.thumbnail((300, 300))
+                photo_tags = self.photos.get(photo_path, [])
+                if "Live" in photo_tags:
+                    draw = ImageDraw.Draw(img, "RGBA")
+                    font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
+                    text = "Live"
+                    textwidth, textheight = draw.textsize(text, font=font)
+                    # 在图片上绘制半透明矩形作为文本背景
+                    draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
+                    # 在半透明矩形上绘制文本
+                    draw.text((10, 10), text, fill=(255,0,0,255), font=font)
                 photo_image = ImageTk.PhotoImage(img)
                 self.photo_images.append(photo_image)
             except (FileNotFoundError, UnidentifiedImageError):
-                # 处理文件找不到或图片文件损坏的情况
-                # 这里可以加载一个默认图片，表示图片无法加载
-                img = Image.new('RGB', (300, 300), color = 'gray')
+                img = Image.new('RGB', (300, 300), color='gray')
                 photo_image = ImageTk.PhotoImage(img)
                 self.photo_images.append(photo_image)
-                print(f"Error loading image: {photo_path}")  # 或者使用其他方式记录日志
+                print(f"Error loading image: {photo_path}")
 
             button = tk.Button(self.photos_frame, image=photo_image, command=lambda p=photo_path: self.open_photo_viewer(p))
             button.grid(row=row, column=column, padx=5, pady=5)
 
-            photo_tags = self.photos.get(photo_path, [])
             if "Live" in photo_tags:
                 button.bind("<Enter>", lambda event, path=photo_path: self.start_live_video(event, path))
                 button.bind("<Leave>", lambda event: self.stop_live_video())
