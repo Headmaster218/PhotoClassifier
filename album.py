@@ -2,6 +2,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox, filedialog
 from PIL import Image, ImageTk, UnidentifiedImageError, ImageDraw, ImageFont
+import numpy as np
 import cv2
 import json 
 import os
@@ -18,10 +19,17 @@ class PhotoViewer(tk.Toplevel):
         self.title(os.path.basename(photo_path))
         self.geometry("800x650")
 
-        # 使用OpenCV加载和转换图像
-        self.cv_img = cv2.imread(photo_path)
-        self.cv_img = cv2.cvtColor(self.cv_img, cv2.COLOR_BGR2RGB)
-        self.img_height, self.img_width = self.cv_img.shape[:2]
+        # 使用open以二进制方式读取图片数据
+        with open(photo_path, 'rb') as file:
+            img_data = file.read()
+            img_array = np.asarray(bytearray(img_data), dtype=np.uint8)
+            self.cv_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)  # 使用cv2.IMREAD_COLOR确保图像是以彩色模式读取
+
+        # 确保图像非空
+        if self.cv_img is not None:
+            # 只需要进行一次颜色空间转换
+            self.cv_img = cv2.cvtColor(self.cv_img, cv2.COLOR_BGR2RGB)
+            self.img_height, self.img_width = self.cv_img.shape[:2]
 
         # 初始化图像缩放比例和位置
         self.scale = 1.0
