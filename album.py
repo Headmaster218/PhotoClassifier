@@ -1,3 +1,4 @@
+import threading
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox, filedialog
 from PIL import Image, ImageTk
@@ -102,6 +103,7 @@ class ClassifiedPhotoAlbum:
         self.classifications_file = classifications_file
         self.photos = self.load_classifications()
         self.all_categories = self.get_all_categories()
+        self.stop_video_flag = threading.Event()
         self.photo_images = []
         self.current_category_photos = []  # 初始化为空列表
 
@@ -285,10 +287,45 @@ class ClassifiedPhotoAlbum:
             img.thumbnail((300, 300))
             photo_image = ImageTk.PhotoImage(img)
             self.photo_images.append(photo_image)
+            
             button = tk.Button(self.photos_frame, image=photo_image, command=lambda p=photo_path: self.open_photo_viewer(p))
             button.grid(row=row, column=column, padx=5, pady=5)
 
-        self.update_pagination_info()
+            photo_tags = self.photos.get(photo_path, [])
+            if "Live" in photo_tags:
+                button.bind("<Enter>", lambda event, path=photo_path: self.start_live_video(event, path))
+                button.bind("<Leave>", lambda event: self.stop_live_video())
+
+    def start_live_video(self, event, photo_path):
+        self.stop_video_flag.clear()  # 清除停止标志以开始播放
+        base, _ = os.path.splitext(photo_path)
+        live_video_path = f"{base}.MOV"
+        if not os.path.exists(live_video_path):
+            return
+        video_thread = threading.Thread(target=self.play_video, args=(live_video_path, event.widget,))
+        video_thread.start()
+
+    def stop_live_video(self):
+        self.stop_video_flag.set()  # 设置停止标志以停止视频播放
+
+    def play_video(self, video_path, widget):
+        cap = cv2.VideoCapture(video_path)
+        fps = int(cap.get(cv2.CAP_PROP_FPS))  # 获取视频帧率
+        wait_time = max(1, int(1000 / fps))  # 计算等待时间，至少为1ms
+        while not self.stop_video_flag.is_set():  # 使用停止标志控制循环
+            ret, frame = cap.read()
+            if ret:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(frame)
+                img.thumbnail((300, 300))
+                photo_image = ImageTk.PhotoImage(img)
+                widget.config(image=photo_image)
+                widget.image = photo_image  # 防止垃圾回收
+                cv2.waitKey(wait_time)
+            else:
+                break
+        cap.release()
+
 
     def open_photo_viewer(self, photo_path):
         PhotoViewer(self.master, photo_path, self.all_categories, self.photos.get(photo_path, []), self.update_photo_classification)
