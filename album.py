@@ -1,7 +1,7 @@
 import threading
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox, filedialog
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, UnidentifiedImageError
 import cv2
 import json 
 import os
@@ -283,11 +283,19 @@ class ClassifiedPhotoAlbum:
         for index, photo_path in enumerate(photos_to_display):
             row = index // self.columns
             column = index % self.columns
-            img = Image.open(photo_path)
-            img.thumbnail((300, 300))
-            photo_image = ImageTk.PhotoImage(img)
-            self.photo_images.append(photo_image)
-            
+            try:
+                img = Image.open(photo_path)
+                img.thumbnail((300, 300))
+                photo_image = ImageTk.PhotoImage(img)
+                self.photo_images.append(photo_image)
+            except (FileNotFoundError, UnidentifiedImageError):
+                # 处理文件找不到或图片文件损坏的情况
+                # 这里可以加载一个默认图片，表示图片无法加载
+                img = Image.new('RGB', (300, 300), color = 'gray')
+                photo_image = ImageTk.PhotoImage(img)
+                self.photo_images.append(photo_image)
+                print(f"Error loading image: {photo_path}")  # 或者使用其他方式记录日志
+
             button = tk.Button(self.photos_frame, image=photo_image, command=lambda p=photo_path: self.open_photo_viewer(p))
             button.grid(row=row, column=column, padx=5, pady=5)
 
@@ -295,6 +303,8 @@ class ClassifiedPhotoAlbum:
             if "Live" in photo_tags:
                 button.bind("<Enter>", lambda event, path=photo_path: self.start_live_video(event, path))
                 button.bind("<Leave>", lambda event: self.stop_live_video())
+
+        self.update_pagination_info()
 
     def start_live_video(self, event, photo_path):
         self.stop_video_flag.clear()  # 清除停止标志以开始播放
