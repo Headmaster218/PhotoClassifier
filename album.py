@@ -101,7 +101,9 @@ class ClassifiedPhotoAlbum:
         self.master = master
         self.classifications_file = classifications_file
         self.photos = self.load_classifications()
+        self.all_categories = self.get_all_categories()
         self.photo_images = []
+        self.current_category_photos = []  # 初始化为空列表
 
         self.rows = 3
         self.columns = 6
@@ -134,8 +136,14 @@ class ClassifiedPhotoAlbum:
         navigation_frame = tk.Frame(master)
         navigation_frame.pack(fill=tk.X)
 
+        self.prev_page_button = tk.Button(navigation_frame, text="上一页", command=self.show_prev_page)
+        self.prev_page_button.pack(side=tk.LEFT, padx=5)
+
         self.page_info_label = tk.Label(navigation_frame, text="页码: 1/1")
         self.page_info_label.pack(side=tk.LEFT, padx=5)
+
+        self.next_page_button = tk.Button(navigation_frame, text="下一页", command=self.show_next_page)
+        self.next_page_button.pack(side=tk.LEFT, padx=5)
 
         self.goto_page_entry = ttk.Entry(navigation_frame, width=5)
         self.goto_page_entry.pack(side=tk.LEFT, padx=5)
@@ -143,7 +151,8 @@ class ClassifiedPhotoAlbum:
         self.goto_page_button = tk.Button(navigation_frame, text="跳转", command=self.goto_page)
         self.goto_page_button.pack(side=tk.LEFT, padx=5)
 
-        self.photos_frame = tk.Frame(master)
+        # 在 __init__ 方法中创建 photos_frame
+        self.photos_frame = tk.Frame(self.master)
         self.photos_frame.pack(expand=True, fill=tk.BOTH)
 
         # 更新所有下拉框的选项
@@ -165,7 +174,6 @@ class ClassifiedPhotoAlbum:
             self.current_category_photos = [photo for photo, labels in self.photos.items() if selected_category1 in labels and selected_category2 not in labels]
 
         self.current_page = 0
-        self.update_pagination_info()
         self.display_photos()
 
     def update_comboboxes(self):
@@ -186,9 +194,28 @@ class ClassifiedPhotoAlbum:
     def export_results(self):
         export_folder = filedialog.askdirectory()
         if export_folder:
+            # 加载分类信息
+            self.photos = self.load_classifications()
+
             for photo_path in self.current_category_photos:
+                # 复制照片
                 shutil.copy(photo_path, os.path.join(export_folder, os.path.basename(photo_path)))
+
+                # 检查是否有'Live'属性
+                photo_tags = self.photos.get(photo_path)
+                if photo_tags and "Live" in photo_tags:
+                    # 构建同名.MOV文件的路径
+                    base, ext = os.path.splitext(photo_path)
+                    mov_path = f"{base}.MOV"
+
+                    # 检查.MOV文件是否存在
+                    if os.path.exists(mov_path):
+                        # 复制.MOV文件
+                        shutil.copy(mov_path, os.path.join(export_folder, os.path.basename(mov_path)))
+
             messagebox.showinfo("导出完成", f"已导出到{export_folder}")
+
+
 
     def update_pagination_info(self):
         total_pages = max(1, (len(self.current_category_photos) - 1) // self.photos_per_page + 1)
@@ -239,7 +266,6 @@ class ClassifiedPhotoAlbum:
             self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels and category2 not in labels]
 
         self.current_page = 0
-        self.update_pagination_info()
         self.display_photos()
 
 
@@ -262,6 +288,8 @@ class ClassifiedPhotoAlbum:
             button = tk.Button(self.photos_frame, image=photo_image, command=lambda p=photo_path: self.open_photo_viewer(p))
             button.grid(row=row, column=column, padx=5, pady=5)
 
+        self.update_pagination_info()
+
     def open_photo_viewer(self, photo_path):
         PhotoViewer(self.master, photo_path, self.all_categories, self.photos.get(photo_path, []), self.update_photo_classification)
 
@@ -276,6 +304,7 @@ class ClassifiedPhotoAlbum:
         if (self.current_page + 1) * self.photos_per_page < len(self.current_category_photos):
             self.current_page += 1
             self.display_photos()
+            
 
     def show_prev_page(self):
         if self.current_page > 0:
