@@ -17,7 +17,7 @@ class PhotoClassifier:
         self.classifications = self.load_classifications()
         self.label_buttons = []
         self.progress_file = 'progress.json'
-        self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./"  # 按键绑定到分类标签
+        self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./QWERTYUIOPASDFGHJKLZXCVBNM"  # 按键绑定到分类标签
 
         self.master.title("照片分类器")
 
@@ -230,20 +230,29 @@ class PhotoClassifier:
 
     def calculate_row_column_for_new_label(self, key_binding_index):
         # 定义每行最多放置的按键数量
-        keys_per_row = [14, 12, 11, 10]  # 举例，根据实际情况调整
-        total_keys_passed = 0
+        keys_per_row = [14, 12, 11, 10]  # 根据实际情况调整
+        total_keys = sum(keys_per_row)
 
-        # 计算应该在哪一行
+        # 计算key_binding_index所在的“虚拟”总行数和列数
+        # 首先，找出key_binding_index属于第几个完整的键盘布局循环
+        cycle_index = key_binding_index // total_keys
+        # 然后，找出在当前循环中的具体位置
+        position_in_cycle = key_binding_index % total_keys
+
+        total_keys_passed = 0
+        # 使用与原始方法相同的逻辑，但是应用于“虚拟”的位置
         for row, keys_count in enumerate(keys_per_row):
-            if key_binding_index < total_keys_passed + keys_count:
+            if position_in_cycle < total_keys_passed + keys_count:
                 # 计算列位置
-                column = key_binding_index - total_keys_passed
-                return row, column
+                column = position_in_cycle - total_keys_passed
+                # 计算实际的“虚拟”行数
+                actual_row = row + len(keys_per_row) * cycle_index
+                return actual_row, column
             total_keys_passed += keys_count
 
-        # 如果键绑定索引超出了定义的行，放置在最后一行，并计算列位置
-        # 注意：这种情况理应不发生，如果发生则可能是key_binding_index计算错误
-        return len(keys_per_row) - 1, key_binding_index - total_keys_passed
+        # 理论上，由于循环的设计，这个返回应该永远不会被执行
+        return len(keys_per_row) - 1, position_in_cycle - total_keys_passed
+
 
 
 
