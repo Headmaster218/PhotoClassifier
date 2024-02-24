@@ -7,3 +7,5 @@ build/
 dist/
 
 sorter.spec
+
+__pycache__/
