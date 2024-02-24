@@ -153,9 +153,11 @@ class PhotoClassifier:
         while self.current_image_index < len(self.image_paths):
             self.current_image_index += 1  # 移动到下一张图片
             if self.current_image_index >= len(self.image_paths):
-                print("没有更多图片了")
+                print("从新开始分类")
                 self.save_classifications()  # Save at the end
                 self.save_progress(final=True)
+                self.current_image_index = 0
+                self.show_image()
                 break
 
             next_image_path = self.image_paths[self.current_image_index]

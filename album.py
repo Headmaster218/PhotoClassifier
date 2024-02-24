@@ -104,7 +104,6 @@ class PhotoViewer(tk.Toplevel):
                 self.update_callback(self.photo_path, new_categories)
                 self.info_label.config(text=f"当前分类: {', '.join(new_categories)}")
 
-
 class ClassifiedPhotoAlbum:
     def __init__(self, master, classifications_file):
         self.master = master
