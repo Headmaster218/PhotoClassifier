@@ -45,6 +45,9 @@ class PhotoClassifier:
         self.next_button = Button(master, text="下一张 (Enter)", command=self.next_image)
         self.next_button.pack()
 
+        self.progress_label = Label(master, text="进度：0/0")
+        self.progress_label.pack()
+
         self.prev_button = Button(master, text="上一张", command=self.show_prev_image)
         self.prev_button.pack(side=LEFT)
 
@@ -164,6 +167,9 @@ class PhotoClassifier:
                 break
 
 
+    def update_progress_display(self):
+        progress_text = f"进度：{self.current_image_index + 1}/{len(self.image_paths)}"
+        self.progress_label.config(text=progress_text)
 
 
     def show_image(self):
@@ -175,6 +181,7 @@ class PhotoClassifier:
             self.display_image(image_path)
         else:
             print("没有更多图片了")
+        self.update_progress_display()
 
     def show_prev_image(self, event = None):
         if self.current_image_index > 1:  # 确保有上一张图片可以显示
@@ -253,18 +260,12 @@ class PhotoClassifier:
         # 理论上，由于循环的设计，这个返回应该永远不会被执行
         return len(keys_per_row) - 1, position_in_cycle - total_keys_passed
 
-
-
-
     def update_label_buttons(self):
         if self.current_image_index < len(self.image_paths):
             current_image_path = self.image_paths[self.current_image_index]
             selected_labels = self.classifications.get(current_image_path, [])
             for label, btn_var in self.label_buttons:
                 btn_var.set(label in selected_labels)
-
-
-
 
     def toggle_label(self, label, btn_var):
         print(f"分类 {label} 被 {'选定' if btn_var.get() else '取消选定'}。")
@@ -307,7 +308,7 @@ class PhotoClassifier:
             self.current_image_index = 0
 
 def find_images(directory):
-    supported_formats = [".jpg", ".jpeg", ".png", ".bmp"]
+    supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".jp2"]
     image_paths = [os.path.join(dp, f) for dp, dn, filenames in os.walk(directory) for f in filenames if os.path.splitext(f)[1].lower() in supported_formats]
     return image_paths
 
