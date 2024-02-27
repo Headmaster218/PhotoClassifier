@@ -115,7 +115,7 @@ class ImageHashGUI:
         hashes = generate_hash(self.directory, hash_func, self.update_progress)
         similar_images_groups = compare_hashes(hashes)
         
-        result_file = f"similar_images_groups_{self.hash_method.get().split()[0]}.json"
+        result_file = f"jsondata/similar_images_groups_{self.hash_method.get().split()[0]}.json"
         with open(result_file, "w",encoding='utf-8') as f:
             json.dump(similar_images_groups, f, indent=4, ensure_ascii=False)
         

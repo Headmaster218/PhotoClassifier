@@ -382,7 +382,7 @@ class ClassifiedPhotoAlbum:
 def main():
     root = tk.Tk()
     root.title("分类相册")
-    app = ClassifiedPhotoAlbum(root, "classifications.json")
+    app = ClassifiedPhotoAlbum(root, "jsondata/classifications.json")
     root.mainloop()
 
 if __name__ == "__main__":
