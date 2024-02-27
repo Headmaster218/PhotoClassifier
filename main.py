@@ -9,7 +9,7 @@ import del_similar_pic  # 手动选择并删除相似照片的脚本
 class MainApplication(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('图片处理工具')
+        self.title('图片分类、处理、查看工具')
         self.geometry('400x300')
 
         # 设置样式
@@ -34,15 +34,26 @@ class MainApplication(tk.Tk):
         self.style.configure('TButton', font=('Helvetica', 12), borderwidth=1)
         self.style.map('TButton', foreground=[('active', 'blue')], background=[('active', 'lightgrey')])
 
+    def hide_main_windows(self, kid):
+        self.withdraw()
+        def on_closing():
+            # 重新显示主窗口
+            self.deiconify()
+            kid.destroy()
+        kid.protocol("WM_DELETE_WINDOW", on_closing)
+
     def open_sorter(self):
         sorter_window = tk.Toplevel(self)
+        self.hide_main_windows(sorter_window)
         sorter_window.title("图片分类器")
         app = sorter.PhotoClassifier(sorter_window)
+        
 
     def open_album(self):
         album_window = tk.Toplevel(self)
+        self.hide_main_windows(album_window)
         album_window.title("分类相册")
-        app = album.ClassifiedPhotoAlbum(album_window, "classifications.json")
+        app = album.ClassifiedPhotoAlbum(album_window, "jsondata/classifications.json")
 
     def convert_heic(self):
         folder_selected = tk.filedialog.askdirectory()
@@ -54,11 +65,13 @@ class MainApplication(tk.Tk):
 
     def open_find_similar_pic(self):
         similar_pic_window = tk.Toplevel(self)
+        self.hide_main_windows(similar_pic_window)
         similar_pic_window.title("查找相似图片")
         app = find_similar_pic.ImageHashGUI(similar_pic_window)
 
     def open_del_similar_pic(self):
         del_similar_pic_window = tk.Toplevel(self)
+        self.hide_main_windows(del_similar_pic_window)
         del_similar_pic_window.title("手动选择并删除相似照片")
         app = del_similar_pic.ImageReviewer(del_similar_pic_window)
 

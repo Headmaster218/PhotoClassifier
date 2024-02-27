@@ -115,11 +115,11 @@ class ImageHashGUI:
         hashes = generate_hash(self.directory, hash_func, self.update_progress)
         similar_images_groups = compare_hashes(hashes)
         
-        result_file = f"jsondata/similar_images_groups_{self.hash_method.get().split()[0]}.json"
+        result_file = f"jsondata/相似照片数据之{self.hash_method.get().split()[0]}.json"
         with open(result_file, "w",encoding='utf-8') as f:
             json.dump(similar_images_groups, f, indent=4, ensure_ascii=False)
         
-        messagebox.showinfo("完成", f"找到 {len(similar_images_groups)} 组相似图片。结果已保存至 {result_file}")
+        messagebox.showinfo("完成", f"找到 {len(similar_images_groups)} 组相似图片。结果已保存至 {result_file}。退出本应用，继续使用手动选择并删除相似照片")
         self.progress['value'] = 0
         self.start_button["state"] = "normal"
 

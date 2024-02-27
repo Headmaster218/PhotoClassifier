@@ -34,7 +34,7 @@ def read_image(path):
         # 将PIL图像转换回OpenCV图像
         return np.array(pil_img)
 
-def resize_image(img, target_width=100, target_height=100, keep_ratio=True):
+def resize_image(img, target_width=300, target_height=300, keep_ratio=True):
     if keep_ratio:
         h, w = img.shape[:2]
         scale = min(target_width/w, target_height/h)
@@ -46,50 +46,77 @@ def resize_image(img, target_width=100, target_height=100, keep_ratio=True):
 
 def open_image_in_window(root, img_paths, current_index):
     def update_image(index):
-        nonlocal img_label, img_paths
+        # 确保index在有效范围内
+        index = max(0, min(index, len(img_paths) - 1))
         new_img_path = img_paths[index]
         img = read_image(new_img_path)  # 重新使用read_image函数读取图片
-        img = resize_image(img, target_width=screen_width, target_height=screen_height, keep_ratio=True)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img_pil = Image.fromarray(img)
+        img_resized = resize_image(img, target_width=screen_width, target_height=screen_height, keep_ratio=True)
+        img_resized = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+        img_pil = Image.fromarray(img_resized)
+
+        # 在这里叠加图片序号
+        draw = ImageDraw.Draw(img_pil)
+        text = f"{index + 1}/{len(img_paths)}"
+        font = ImageFont.truetype("arial.ttf", 60)
+        text_position = (10, 10)
+        text_color = (255, 255, 255)  # 白色
+        draw.text(text_position, text, fill=text_color, font=font)
+
         img_tk = ImageTk.PhotoImage(image=img_pil)
         img_label.configure(image=img_tk)
-        img_label.image = img_tk
+        img_label.image = img_tk  # 防止垃圾回收
+
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+
+    new_window = tk.Toplevel(root)
+    new_window.title("查看大图，按左右键可切换图片")
+    img_label = ttk.Label(new_window)
+    img_label.pack()
 
     def on_key_press(event):
-        nonlocal current_index
+        nonlocal current_index, img_paths
         if event.keysym == 'Right' and current_index < len(img_paths) - 1:
             current_index += 1
             update_image(current_index)
         elif event.keysym == 'Left' and current_index > 0:
             current_index -= 1
             update_image(current_index)
+        # elif event.keysym == 'space':
+        #     # 获取当前图片的路径
+        #     current_img_path = img_paths[current_index]
+        #     # 检查当前图片是否已选中，相应地更新选中状态
+        #     if current_img_path in app.selected_for_deletion:
+        #         # 创建一个临时的BooleanVar，设置为False，表示取消选中
+        #         temp_var = tk.BooleanVar(value=False)
+        #         ImageReviewer.mark_for_deletion(app,current_img_path, temp_var)
+        #     else:
+        #         # 创建一个临时的BooleanVar，设置为True，表示选中
+        #         temp_var = tk.BooleanVar(value=True)
+        #         ImageReviewer.mark_for_deletion(app,current_img_path, temp_var)
 
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    img = read_image(img_paths[current_index])
-    img_resized = resize_image(img, target_width=screen_width, target_height=screen_height, keep_ratio=True)
-    img_resized = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
-    img_pil = Image.fromarray(img_resized)
-    img_tk = ImageTk.PhotoImage(image=img_pil)
 
-    new_window = tk.Toplevel(root)
-    new_window.title("查看图片")
-    img_label = ttk.Label(new_window, image=img_tk)
-    img_label.image = img_tk
-    img_label.pack()
-    new_window.focus_set()
-    new_window.grab_set()
-
+    # 绑定键盘事件
     new_window.bind("<Left>", on_key_press)
     new_window.bind("<Right>", on_key_press)
+    # new_window.bind("<space>", on_key_press)
+
+    new_window.focus_set()  # 窗口获得焦点
+    new_window.grab_set()  # 使新窗口获得所有事件
+
+    # 使用update_image来初始化第一张图片的显示
+    update_image(current_index)
+
+
 
 class ImageReviewer:
     def __init__(self, root):
         self.root = root
-        self.root.title("相似图片查看器")
+        self.root.title("相似图片查看删除器")
+        self.root.geometry("800x650")
+        self.file_path = None
         
-        ttk.Button(self.root, text="选择相似图片组JSON文件", command=self.load_json).pack(pady=20)
+        ttk.Button(self.root, text="第一步：选择相似图片组JSON文件", command=self.load_json).pack(pady=20)
         
         self.image_frame = ttk.Frame(self.root)
         self.image_frame.pack(pady=20)
@@ -114,12 +141,25 @@ class ImageReviewer:
         self.current_group_index = 0
         self.selected_for_deletion = []
 
+        help_text = """
+                    使用指南:
+                    - 点击“第一步”按钮来加载前面找到的相似照片。
+                    - 点击小图片可以查看大图。
+                    - 大图下使用左右箭头键在图片组内切换对比图片。
+                    - 选中图片，点击“确认删除”来删除所有选中的图片。
+                    - “下一组”和“上一组”按钮可以用来在图片组间导航。
+                    
+                    注意：删除操作是不可逆的，请谨慎操作。
+                    """
+        messagebox.showinfo("使用帮助", help_text)
+
     def load_json(self):
-        file_path = filedialog.askopenfilename()
-        if not file_path:
+        initial_directory = './jsondata/'  # 设置初始目录路径
+        self.file_path = filedialog.askopenfilename(initialdir=initial_directory)
+        if not self.file_path:
             return
         
-        with open(file_path, 'r', encoding='utf-8') as file:
+        with open(self.file_path, 'r', encoding='utf-8') as file:
             self.similar_images = json.load(file)
         
         self.current_group_index = 0
@@ -146,7 +186,7 @@ class ImageReviewer:
         else:
             self.previous_button['state'] = tk.DISABLED
 
-        if self.current_group_index < len(self.similar_images) - 1:
+        if self.current_group_index < len(self.similar_images):
             self.next_button['state'] = tk.NORMAL
         else:
             self.next_button['state'] = tk.DISABLED
@@ -170,7 +210,7 @@ class ImageReviewer:
         current_index = group.index(img_path)
         
         # 修改lambda函数，传递整个图片组和当前图片的索引
-        panel.bind("<Button-1>", lambda e, group=group, current_index=current_index: open_image_in_window(root, group, current_index))
+        panel.bind("<Button-1>", lambda e, group=group, current_index=current_index: open_image_in_window(self.root, group, current_index))
 
         # 为当前图片创建删除复选框，并放置在图片下方
         chk_var = tk.BooleanVar()
@@ -221,7 +261,7 @@ class ImageReviewer:
 
     def write_updated_json(self):
         # 假设您的 JSON 文件路径存储在 self.json_file_path
-        with open(self.json_file_path, 'w', encoding='utf-8') as file:
+        with open(self.file_path, 'w', encoding='utf-8') as file:
             json.dump(self.similar_images, file, ensure_ascii=False, indent=4)
         print("JSON file has been updated.")
 

@@ -12,11 +12,11 @@ class PhotoClassifier:
         self.master = master
         image_path = self.load_path()  # 加载路径
         self.image_paths = find_images(image_path)
-        self.labels_file = 'labels.json'
+        self.labels_file = 'jsondata/labels.json'
         self.labels = self.load_labels()
         self.classifications = self.load_classifications()
         self.label_buttons = []
-        self.progress_file = 'progress.json'
+        self.progress_file = 'jsondata/progress.json'
         self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./QWERTYUIOPASDFGHJKLZXCVBNM"  # 按键绑定到分类标签
 
         self.master.title("照片分类器")
@@ -42,18 +42,18 @@ class PhotoClassifier:
         self.add_label_button = Button(master, text="添加新分类", command=self.add_new_label)
         self.add_label_button.pack()
 
-        self.next_button = Button(master, text="下一张 (Enter)", command=self.next_image)
+        self.next_button = Button(master, text="下一张(Enter)", command=self.next_image)
         self.next_button.pack()
 
         self.progress_label = Label(master, text="进度：0/0")
         self.progress_label.pack()
 
-        self.prev_button = Button(master, text="上一张", command=self.show_prev_image)
+        self.prev_button = Button(master, text="上一张(Backspace)", command=self.show_prev_image)
         self.prev_button.pack(side=LEFT)
 
 
-        self.save_and_exit_button = Button(master, text="保存并退出", command=self.save_and_exit)
-        self.save_and_exit_button.pack()
+        self.save_all_button = Button(master, text="保存进度", command=self.save_all)
+        self.save_all_button.pack()
 
         self.master.bind('<space>', self.copy_last_classification)
         self.master.bind('<Return>', lambda event: self.next_image())
@@ -63,13 +63,22 @@ class PhotoClassifier:
         self.load_progress()
         self.show_image()
 
+        messagebox.showinfo("欢迎使用照片分类器", "教程内容：\n"
+                             "- 使用“修改路径”按钮更改图片文件夹。\n"
+                             "- 选择标签对图片进行分类，如风景、小动物、人物等。可以随意添加。\n"
+                             "- 使用“下一张”(Enter)和“上一张”(Backspace)按钮在图片间导航。\n"
+                             "- 可以通过按键（如 '`', '1', '2'...按照键盘顺序排列）快速选择标签。\n"
+                             "- 点击空格可以复制上一张图片的标签。\n"
+                             "- “保存并退出”按钮用于保存进度并退出程序。\n"
+                             "- 会在当前目录创建jsondata文件夹以存储数据\n"
+                             "- 请不要移动照片的位置和改名以确保数据准确。\n")
+
     def save_path(self, new_path):
         data = {'image_path': new_path}
         Path('path.json').write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding='utf-8')
 
-
     def load_path(self):
-        path_file = Path('path.json')
+        path_file = Path('jsondata/path.json')
         if path_file.exists():
             data = json.loads(path_file.read_text(encoding='utf-8'))
             return data.get('image_path')
@@ -103,14 +112,12 @@ class PhotoClassifier:
             
             self.add_label_button_gui(label, display_text, row, column)
 
-
     def add_label_button_gui(self, label, display_text, row, column):
         btn_var = BooleanVar()
         button = Checkbutton(self.buttons_frame, text=display_text, var=btn_var, command=lambda l=label, bv=btn_var: self.toggle_label(l, bv))
         # 使用grid布局并指定行和列
         button.grid(row=row, column=column, sticky='w')
         self.label_buttons.append((label, btn_var))
-
 
     def toggle_label_via_key(self, label):
         for lbl, btn_var in self.label_buttons:
@@ -126,10 +133,14 @@ class PhotoClassifier:
             for label, btn_var in self.label_buttons:
                 btn_var.set(label in last_classification)
 
-    def save_and_exit(self):
+    def save_all(self):
         self.save_classifications()
         self.save_progress()
-        self.master.quit()
+        help_text = """
+            保存成功！
+            """
+        messagebox.showinfo("提示", help_text)
+        # self.master.destroy()
 
     def next_image(self):
         # 保存当前图片的分类
@@ -168,11 +179,9 @@ class PhotoClassifier:
                 self.show_image()
                 break
 
-
     def update_progress_display(self):
         progress_text = f"进度：{self.current_image_index + 1}/{len(self.image_paths)}"
         self.progress_label.config(text=progress_text)
-
 
     def show_image(self):
         # 在显示新图片之前重置所有标签按钮的选中状态
@@ -190,7 +199,6 @@ class PhotoClassifier:
             self.current_image_index -= 1
             self.show_image()
             self.update_label_buttons()  # 更新标签按钮的选中状态
-
 
     def display_image(self, image_path):
         # 尝试使用pathlib处理路径，以提高兼容性
@@ -236,6 +244,9 @@ class PhotoClassifier:
             # 添加新的标签按钮
             self.add_label_button_gui(new_label, display_text, row, column)
             self.new_label_entry.delete(0, 'end')  # 清空输入框
+
+            # 将焦点移到主窗口
+            self.master.focus_set()
 
     def calculate_row_column_for_new_label(self, key_binding_index):
         # 定义每行最多放置的按键数量
@@ -283,7 +294,6 @@ class PhotoClassifier:
                 return json.load(json_file)
         except FileNotFoundError:
             return {}
-
 
     def save_labels(self):
         with open(self.labels_file, 'w', encoding='utf-8') as json_file:

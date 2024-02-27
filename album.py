@@ -17,7 +17,7 @@ class PhotoViewer(tk.Toplevel):
         self.update_callback = update_callback
 
         self.title(os.path.basename(photo_path))
-        self.geometry("800x650")
+        self.geometry("1280x790")
 
         # 使用open以二进制方式读取图片数据
         with open(photo_path, 'rb') as file:
@@ -34,10 +34,10 @@ class PhotoViewer(tk.Toplevel):
         # 初始化图像缩放比例和位置
         self.scale = 1.0
         self.calculate_initial_scale()
-        self.image_position_x = (800 - self.img_width * self.scale) / 2
-        self.image_position_y = (600 - self.img_height * self.scale) / 2
+        self.image_position_x = (1280 - self.img_width * self.scale) / 2
+        self.image_position_y = (720 - self.img_height * self.scale) / 2
 
-        self.canvas = tk.Canvas(self, width=800, height=600, bg='black')
+        self.canvas = tk.Canvas(self, width=1280, height=720, bg='black')
         self.canvas.pack()
 
         # 绑定滚轮事件用于缩放
@@ -57,8 +57,8 @@ class PhotoViewer(tk.Toplevel):
 
     def calculate_initial_scale(self):
         # 根据窗口大小计算初始缩放比例
-        scale_x = 800 / self.img_width
-        scale_y = 600 / self.img_height
+        scale_x = 1280 / self.img_width
+        scale_y = 720 / self.img_height
         self.scale = min(scale_x, scale_y)
 
     def zoom_image(self, event):
@@ -98,7 +98,19 @@ class PhotoViewer(tk.Toplevel):
         initial_category = ", ".join(self.photo_categories)
         new_category = simpledialog.askstring("修改分类", "输入新的分类名(多个分类用逗号分隔):", initialvalue=initial_category, parent=self)
         if new_category is not None:
+            # 自动替换中英文逗号
+            new_category = new_category.replace('，', ',')
+            # 检查非法符号
+            illegal_chars = set("!@#$%^&*()_+=[]{};:'\"\\|<>/?")
+            if any(char in illegal_chars for char in new_category):
+                messagebox.showerror("错误", "分类名中包含非法字符，请重新输入。")
+                return
+            # 分割并去除空格
             new_categories = [c.strip() for c in new_category.split(',')]
+            # 检查是否所有分类都存在
+            if not all(c in self.all_categories or c == "" for c in new_categories):
+                messagebox.showerror("错误", "输入了不存在的分类，请检查后重新输入。")
+                return
             if set(new_categories) != set(self.photo_categories):
                 self.photo_categories = new_categories
                 self.update_callback(self.photo_path, new_categories)
@@ -113,6 +125,7 @@ class ClassifiedPhotoAlbum:
         self.stop_video_flag = threading.Event()
         self.photo_images = []
         self.current_category_photos = []  # 初始化为空列表
+        self.currently_playing_widget = None  # 追踪当前播放视频的widget
 
         self.rows = 3
         self.columns = 6
@@ -128,7 +141,7 @@ class ClassifiedPhotoAlbum:
         tk.Label(filter_frame, text="分类1:").pack(side=tk.LEFT, padx=5)
         self.category_combobox1 = ttk.Combobox(filter_frame, state="readonly", postcommand=self.update_comboboxes)
         tk.Label(filter_frame, text="条件:").pack(side=tk.LEFT, padx=5)
-        self.filter_type_combobox = ttk.Combobox(filter_frame, state="readonly", values=["且", "或", "除了", "无"])
+        self.filter_type_combobox = ttk.Combobox(filter_frame, state="readonly", values=["照片中既有又有", "照片中有任一", "只有前面没有后面", "无"])
         tk.Label(filter_frame, text="分类2:").pack(side=tk.LEFT, padx=5)
         self.category_combobox2 = ttk.Combobox(filter_frame, state="readonly")
 
@@ -139,7 +152,6 @@ class ClassifiedPhotoAlbum:
 
         self.export_button = tk.Button(filter_frame, text="导出结果", command=self.export_results)
         self.export_button.pack(side=tk.RIGHT, padx=5)
-
 
         # 分页和跳转UI设置
         navigation_frame = tk.Frame(master)
@@ -167,20 +179,32 @@ class ClassifiedPhotoAlbum:
         # 更新所有下拉框的选项
         self.update_comboboxes()
 
+        messagebox.showinfo("使用说明", "欢迎使用分类相册应用！\n\n"
+                                "1. 从左上角下拉框来选择想看的图片。\n"
+                                "2. 点击图片可以查看大图。\n"
+                                "3. 大图界面使用滚轮缩放图片。\n"
+                                "4. 大图界面拖动鼠标平移图片。\n"
+                                "5. 大图界面点击'修改分类'按钮来更新图片分类。\n"
+                                "6. 将鼠标悬停在带有'Live'标签的图片上可以预览视频。\n"
+                                "7. 使用导出结果按钮来导出当前筛选的图片。\n\n"
+                                "请尽情探索更多功能！")
 
-    def update_display(self, event=None):
-        selected_category1 = self.category_combobox1.get()
-        selected_category2 = self.category_combobox2.get()
+    def category_selected(self, event=None):
         filter_type = self.filter_type_combobox.get()
+        category1 = self.category_combobox1.get()
+        category2 = self.category_combobox2.get()
 
-        if selected_category1 == "无":
-            self.current_category_photos = list(self.photos.keys())
-        elif filter_type == "且":
-            self.current_category_photos = [photo for photo, labels in self.photos.items() if selected_category1 in labels and selected_category2 in labels]
-        elif filter_type == "或":
-            self.current_category_photos = [photo for photo, labels in self.photos.items() if selected_category1 in labels or selected_category2 in labels and selected_category2 != "无"]
-        elif filter_type == "除了":
-            self.current_category_photos = [photo for photo, labels in self.photos.items() if selected_category1 in labels and selected_category2 not in labels]
+        if filter_type == "无":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels]
+        elif filter_type == "照片中既有又有":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels and category2 in labels]
+        elif filter_type == "照片中有任一":
+            if category2 == "无":  # 如果第二个分类是"无"，则仅根据第一个分类筛选
+                self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels]
+            else:  # 否则，检查照片是否含有任一分类
+                self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels or category2 in labels]
+        elif filter_type == "只有前面没有后面":
+            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels and category2 not in labels]
 
         self.current_page = 0
         self.display_photos()
@@ -191,14 +215,15 @@ class ClassifiedPhotoAlbum:
         self.category_combobox2['values'] = all_categories
         self.category_combobox1.bind("<<ComboboxSelected>>", self.category_selected)
         self.category_combobox2.bind("<<ComboboxSelected>>", self.category_selected)
+        self.filter_type_combobox.bind("<<ComboboxSelected>>", self.filter_type_selected)
 
     def filter_type_selected(self, event=None):
+        self.category_selected()
         if self.filter_type_combobox.get() == "无":
             self.category_combobox2.set("无")
             self.category_combobox2['state'] = 'disabled'
         else:
             self.category_combobox2['state'] = 'readonly'
-
 
     def export_results(self):
         export_folder = filedialog.askdirectory()
@@ -224,8 +249,6 @@ class ClassifiedPhotoAlbum:
 
             messagebox.showinfo("导出完成", f"已导出到{export_folder}")
 
-
-
     def update_pagination_info(self):
         total_pages = max(1, (len(self.current_category_photos) - 1) // self.photos_per_page + 1)
         self.page_info_label.config(text=f"页码: {self.current_page + 1}/{total_pages}")
@@ -246,37 +269,11 @@ class ClassifiedPhotoAlbum:
             return json.load(file)
 
     def get_all_categories(self):
-        categories = set()
+        categories = {}
         for labels in self.photos.values():
-            categories.update(labels)
-        return list(categories)
-
-    # 确保当"无"被选中时，第二个下拉框被禁用
-    def filter_type_selected(self, event=None):
-        super().filter_type_selected(event)
-        if self.filter_type_combobox.get() == "无":
-            self.category_combobox2.set("无")
-            self.category_combobox2['state'] = 'disabled'
-        else:
-            self.category_combobox2['state'] = 'readonly'
-
-    def category_selected(self, event=None):
-        filter_type = self.filter_type_combobox.get()
-        category1 = self.category_combobox1.get()
-        category2 = self.category_combobox2.get()
-
-        if filter_type == "无":
-            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels or category1 == "无"]
-        elif filter_type == "且":
-            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels and category2 in labels]
-        elif filter_type == "或":
-            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels or category2 in labels]
-        elif filter_type == "除了":
-            self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels and category2 not in labels]
-
-        self.current_page = 0
-        self.display_photos()
-
+            for label in labels:
+                categories[label] = None  # 使用 None 作为值，因为我们只关心键的顺序
+        return list(categories.keys())
 
     def display_photos(self):
         for widget in self.photos_frame.winfo_children():
@@ -321,16 +318,31 @@ class ClassifiedPhotoAlbum:
         self.update_pagination_info()
 
     def start_live_video(self, event, photo_path):
+        # 如果有视频正在播放，先停止它
+        if self.currently_playing_widget and self.currently_playing_widget != event.widget:
+            self.stop_live_video()
+        
         self.stop_video_flag.clear()  # 清除停止标志以开始播放
         base, _ = os.path.splitext(photo_path)
         live_video_path = f"{base}.MOV"
         if not os.path.exists(live_video_path):
             return
+
+        # 记录当前播放视频的widget
+        self.currently_playing_widget = event.widget
         video_thread = threading.Thread(target=self.play_video, args=(live_video_path, event.widget,))
         video_thread.start()
 
     def stop_live_video(self):
-        self.stop_video_flag.set()  # 设置停止标志以停止视频播放
+        if self.currently_playing_widget:
+            self.stop_video_flag.set()  # 设置停止标志以停止视频播放
+            # 等待视频播放线程结束，或者设置一定超时时间
+            self.stop_video_flag.wait(timeout=1.0)  # 假设等待线程结束或超时
+            # 恢复原始图片
+            original_image = self.currently_playing_widget.cget("image")
+            self.currently_playing_widget.config(image=original_image)
+            self.currently_playing_widget.image = original_image
+            self.currently_playing_widget = None
 
     def play_video(self, video_path, widget):
         # 保存原始图片引用
@@ -352,11 +364,9 @@ class ClassifiedPhotoAlbum:
                 break
         cap.release()
         # 当停止播放时，恢复原始图片
-        self.stop_video_flag.clear()
+        self.stop_video_flag.set()
         widget.config(image=original_image)
         widget.image = original_image
-
-
 
     def open_photo_viewer(self, photo_path):
         PhotoViewer(self.master, photo_path, self.all_categories, self.photos.get(photo_path, []), self.update_photo_classification)
@@ -373,7 +383,6 @@ class ClassifiedPhotoAlbum:
             self.current_page += 1
             self.display_photos()
             
-
     def show_prev_page(self):
         if self.current_page > 0:
             self.current_page -= 1
