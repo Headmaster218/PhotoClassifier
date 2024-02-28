@@ -241,14 +241,19 @@ class ImageReviewer:
             # 更新内存中的数据结构
             updated_groups = []
             for group in self.similar_images:
+                # 从当前组中移除选中的图片
                 updated_group = [img_path for img_path in group if img_path not in self.selected_for_deletion]
-                if updated_group:  # 仅添加非空组
+                
+                # 仅当组中剩余图片数量大于1时，才添加到更新后的列表中
+                if len(updated_group) > 1:
                     updated_groups.append(updated_group)
-            
+                
+                # 如果组中仅剩一张图片或为空，则该组不被添加到更新后的列表中，相当于从JSON中去除这组条目
+                
             # 删除文件
             for path in self.selected_for_deletion:
                 os.remove(path)
-                print(f"Deleted: {path}")  # 为了跟踪目的打印信息，实际使用时可以去除
+                print(f"Deleted: {path}")  # 实际使用时可以去除
 
             # 更新内部状态
             self.similar_images = updated_groups
@@ -264,7 +269,10 @@ class ImageReviewer:
                 self.show_group(self.similar_images[self.current_group_index])
             else:
                 self.current_group_index = max(0, len(self.similar_images) - 1)  # 防止索引越界
-                self.show_group(self.similar_images[self.current_group_index]) if self.similar_images else self.reset_view()
+                if self.similar_images:
+                    self.show_group(self.similar_images[self.current_group_index])
+                else:
+                    self.reset_view()
 
     def write_updated_json(self):
         # 假设您的 JSON 文件路径存储在 self.json_file_path

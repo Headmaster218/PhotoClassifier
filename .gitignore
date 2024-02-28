@@ -9,3 +9,5 @@ dist/
 sorter.spec
 
 __pycache__/
+
+*.pkl

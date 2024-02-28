@@ -75,7 +75,7 @@ class PhotoClassifier:
 
     def save_path(self, new_path):
         data = {'image_path': new_path}
-        Path('path.json').write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding='utf-8')
+        Path('jsondata/path.json').write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding='utf-8')
 
     def load_path(self):
         path_file = Path('jsondata/path.json')
@@ -284,13 +284,13 @@ class PhotoClassifier:
         print(f"分类 {label} 被 {'选定' if btn_var.get() else '取消选定'}。")
 
     def save_classifications(self):
-        with open('classifications.json', 'w', encoding='utf-8') as json_file:
+        with open('jsondata/classifications.json', 'w', encoding='utf-8') as json_file:
             json.dump(self.classifications, json_file, ensure_ascii=False, indent=4)
-        print("分类结果已保存到 classifications.json")
+        print("分类结果已保存到 jsondata/classifications.json")
 
     def load_classifications(self):
         try:
-            with open('classifications.json', 'r', encoding='utf-8') as json_file:  # 指定文件编码为utf-8
+            with open('jsondata/classifications.json', 'r', encoding='utf-8') as json_file:  # 指定文件编码为utf-8
                 return json.load(json_file)
         except FileNotFoundError:
             return {}
