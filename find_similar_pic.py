@@ -6,6 +6,8 @@ import imagehash
 from PIL import Image
 from collections import defaultdict
 from threading import Thread
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 
 class ImageGraph:
     def __init__(self):
@@ -33,21 +35,46 @@ class ImageGraph:
                 components.append(component)
         return components
 
+
+def hash_file(img_path, hash_func):
+    try:
+        with Image.open(img_path) as img:
+            hash = hash_func(img)
+            return img_path, str(hash)
+    except Exception as e:
+        print(f"Error processing {img_path}: {e}")
+        return img_path, None
+
 def generate_hash(directory, hash_func, update_progress):
     hashes = {}
+    tasks = []
+    img_paths = []
+
     for root, dirs, filenames in os.walk(directory):
-        total = len(filenames)
-        for i, filename in enumerate(filenames):
+        for filename in filenames:
             if filename.lower().endswith(('jpg', 'jpeg', 'png')):
-                try:
-                    img_path = os.path.join(root, filename)
-                    with Image.open(img_path) as img:
-                        hash = hash_func(img)
-                        hashes[img_path] = str(hash)
-                except Exception as e:
-                    print(f"Error processing {filename}: {e}")
+                img_path = os.path.join(root, filename)
+                img_paths.append(img_path)
+
+    total = len(img_paths)
+    with ProcessPoolExecutor() as executor:
+        for img_path in img_paths:
+            tasks.append(executor.submit(hash_file, img_path, hash_func))
+
+        for i, task in enumerate(as_completed(tasks)):
+            img_path, hash = task.result()
+            if hash:
+                hashes[img_path] = hash
             update_progress(i + 1, total)
+
     return hashes
+
+
+def compare_pair(keys, hashes, threshold, index_pair):
+    i, j = index_pair
+    if imagehash.hex_to_hash(hashes[keys[i]]) - imagehash.hex_to_hash(hashes[keys[j]]) < threshold:
+        return keys[i], keys[j]
+    return None
 
 def compare_hashes(hashes, threshold=5):
     graph = ImageGraph()
@@ -115,7 +142,7 @@ class ImageHashGUI:
         hashes = generate_hash(self.directory, hash_func, self.update_progress)
         similar_images_groups = compare_hashes(hashes)
         
-        result_file = f"jsondata/相似照片数据之{self.hash_method.get().split()[0]}.json"
+        result_file = f"jsondata/相似照片数据.json"
         with open(result_file, "w",encoding='utf-8') as f:
             json.dump(similar_images_groups, f, indent=4, ensure_ascii=False)
         
