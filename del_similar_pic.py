@@ -59,12 +59,23 @@ def open_image_in_window(root, img_paths, current_index):
         text = f"{index + 1}/{len(img_paths)}"
         font = ImageFont.truetype("arial.ttf", 60)
         text_position = (10, 10)
-        text_color = (255, 255, 255)  # 白色
+        text_color = (255, 255, 255)  # 白色文字
+
+        # 计算文字背景的大小
+        text_width, text_height = draw.textsize(text, font=font)
+        background_position = (text_position[0], text_position[1], text_position[0] + text_width, text_position[1] + text_height)
+
+        # 绘制文字背景
+        background_color = (0, 0, 0)  # 黑色背景
+        draw.rectangle(background_position, fill=background_color)
+
+        # 在背景上绘制文字
         draw.text(text_position, text, fill=text_color, font=font)
 
         img_tk = ImageTk.PhotoImage(image=img_pil)
         img_label.configure(image=img_tk)
         img_label.image = img_tk  # 防止垃圾回收
+
 
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
@@ -106,8 +117,6 @@ def open_image_in_window(root, img_paths, current_index):
 
     # 使用update_image来初始化第一张图片的显示
     update_image(current_index)
-
-
 
 class ImageReviewer:
     def __init__(self, root):
@@ -191,7 +200,6 @@ class ImageReviewer:
         else:
             self.next_button['state'] = tk.DISABLED
 
-
     def show_image(self, img_path, group):
         img_frame = ttk.Frame(self.image_frame)  # 为图片和删除按钮创建一个新的框架
         img_frame.pack(side="left", padx=10, pady=10)  # 将框架添加到image_frame中
@@ -217,7 +225,6 @@ class ImageReviewer:
         delete_chk = ttk.Checkbutton(img_frame, text="删除", variable=chk_var)  # 将删除按钮添加到img_frame
         delete_chk.pack(side="bottom")  # 确保删除按钮在框架的底部
         delete_chk.configure(command=lambda var=chk_var, path=img_path: self.mark_for_deletion(path, var))
-
 
     def mark_for_deletion(self, path, var):
         if var.get():
@@ -275,7 +282,6 @@ class ImageReviewer:
         self.confirm_delete_button['state'] = tk.DISABLED
         messagebox.showinfo("信息", "所有图片组都已处理完毕或已删除。")
 
-
     def next_group(self):
         self.current_group_index += 1
         if self.current_group_index < len(self.similar_images):
@@ -303,7 +309,6 @@ class ImageReviewer:
         # 确保在有可显示的图片组时，“确认删除选中的图片”按钮是启用的
         if self.similar_images:
             self.confirm_delete_button['state'] = tk.NORMAL
-
 
 if __name__ == "__main__":
     root = tk.Tk()
