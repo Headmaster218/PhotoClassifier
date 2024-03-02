@@ -1,11 +1,16 @@
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 import cv2
 import os
 import numpy as np
 from tkinter import *
 from PIL import Image, ImageTk
 import json
+
+def is_video_file(file_path):
+    video_extensions = ['.mp4', '.avi', '.mov']  # 视频文件扩展名列表
+    lower_file_path = file_path.lower()  # 将文件路径转换为小写进行检查
+    return any(lower_file_path.endswith(ext) for ext in video_extensions)
 
 class PhotoClassifier:
     def __init__(self, master):
@@ -15,6 +20,9 @@ class PhotoClassifier:
         self.labels_file = 'jsondata/labels.json'
         self.labels = self.load_labels()
         self.classifications = self.load_classifications()
+        self.after_id = None
+        self.cap = None
+        self.video_length = 0
         self.label_buttons = []
         self.progress_file = 'jsondata/progress.json'
         self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./QWERTYUIOPASDFGHJKLZXCVBNM"  # 按键绑定到分类标签
@@ -30,6 +38,11 @@ class PhotoClassifier:
 
         self.image_label = Label(master)
         self.image_label.pack()
+        self.image_label.config(width=960, height=720)
+
+
+        self.progress_bar = ttk.Scale(master, from_=0, to=10, orient="horizontal", length="500")
+        self.progress_bar.pack()
 
         self.buttons_frame = Frame(master)
         self.buttons_frame.pack()
@@ -56,7 +69,7 @@ class PhotoClassifier:
         self.save_all_button.pack()
 
         self.master.bind('<space>', self.copy_last_classification)
-        self.master.bind('<Return>', lambda event: self.next_image())
+        self.master.bind('<Return>', self.next_image)
         self.master.bind('<BackSpace>', self.show_prev_image)
 
 
@@ -174,8 +187,6 @@ class PhotoClassifier:
             next_image_path = self.image_paths[self.current_image_index]
             # 检查下一张图片是否未分类或空分类
             if next_image_path not in self.classifications or not self.classifications[next_image_path]:
-                for _, btn_var in self.label_buttons:
-                    btn_var.set(False)  # Reset the button state for the next image
                 self.show_image()
                 break
 
@@ -185,22 +196,98 @@ class PhotoClassifier:
 
     def show_image(self):
         # 在显示新图片之前重置所有标签按钮的选中状态
+        self.stop_playing()
         for _, btn_var in self.label_buttons:
             btn_var.set(False)
-        if self.current_image_index < len(self.image_paths):
-            image_path = self.image_paths[self.current_image_index]
-            self.display_image(image_path)
-        else:
-            print("没有更多图片了")
+        image_path = self.image_paths[self.current_image_index]
+        self.display_image(image_path)
         self.update_progress_display()
 
     def show_prev_image(self, event = None):
-        if self.current_image_index > 1:  # 确保有上一张图片可以显示
+        if self.current_image_index > 0:  # 确保有上一张图片可以显示
             self.current_image_index -= 1
             self.show_image()
             self.update_label_buttons()  # 更新标签按钮的选中状态
 
-    def display_image(self, image_path):
+    def display_image(self, file_path):
+        if is_video_file(file_path):
+            self.display_video(file_path)
+        else:
+            self.display_photo(file_path)
+
+    def stop_playing(self):
+        if self.after_id:
+            self.master.after_cancel(self.after_id)
+            self.after_id = None  # 清除标识符
+        if self.cap:
+            self.cap.release()  # 释放视频捕获对象
+            self.cap = None
+
+    def display_video(self, file_path):
+        if self.cap:
+            self.cap.release()
+        self.cap = cv2.VideoCapture(file_path)
+        if not self.cap.isOpened():
+            print("Error opening video stream or file")
+            return
+        length = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        self.progress_bar.configure(from_=0, to=length, command=self.update_video_frame)      #切换视频时卡顿严重，怀疑是没停止播放导致。
+        self.master.focus_set()  # 确保主窗口获得焦点
+        self.update_frame()
+
+    def update_frame(self):
+        if self.cap and self.cap.isOpened():# and self.playing:
+            ret, frame = self.cap.read()
+            target_width = 960
+            target_height = 720
+            h, w = frame.shape[:2]
+
+            # 计算缩放比例并确保等比例缩放
+            scale = min(target_width / w, target_height / h)
+            new_w, new_h = int(w * scale), int(h * scale)
+            resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)  #视频缩放依然有问题。
+
+            # # 创建新的背景图像
+            # background = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+
+            # # 计算居中粘贴的位置
+            # x_offset = (target_width - new_w) // 2
+            # y_offset = (target_height - new_h) // 2
+
+            # # 将缩放后的帧粘贴到背景中
+            # background[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized_frame
+
+            # 将OpenCV图像转换为PIL图像以便使用ImageTk显示
+            # img = Image.fromarray(cv2.cvtColor(background, cv2.COLOR_BGR2RGB))
+            img = Image.fromarray(cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB))
+
+            photo_image = ImageTk.PhotoImage(image=img)
+            self.image_label.configure(image=photo_image)
+            self.image_label.image = photo_image  # 避免垃圾回收
+
+            # 更新进度条位置
+            current_frame = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
+            self.progress_bar.set(current_frame)
+
+            # 设置定时器以继续读取下一帧                
+            self.after_id = self.master.after(20, self.update_frame)
+        else:
+            self.stop_playing()
+
+    def update_video_frame(self, pos):
+        if self.cap:
+            frame_number = int(float(pos))
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            ret, frame = self.cap.read()
+            if ret:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(frame)
+                photo_image = ImageTk.PhotoImage(image=img)
+                self.image_label.configure(image=photo_image)
+                self.image_label.image = photo_image
+
+    def display_photo(self, image_path):
         # 尝试使用pathlib处理路径，以提高兼容性
         image_path = Path(image_path)
         
@@ -210,7 +297,7 @@ class PhotoClassifier:
             img_array = np.frombuffer(img_data, np.uint8)  # 将数据转换为numpy数组
             img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)  # 用OpenCV解码图片数据
             if img is None:
-                raise IOError("无法加载图片")
+                raise IOError("无法加载图片"+str(image_path))
         except Exception as e:
             messagebox.showerror("错误", f"加载图片失败：{e}")
             return
@@ -320,7 +407,8 @@ class PhotoClassifier:
             self.current_image_index = 0
 
 def find_images(directory):
-    supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".jp2"]
+    # supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".jp2"]
+    supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".jp2", ".mp4", ".avi", ".mov"]  # 添加视频格式
     image_paths = [os.path.join(dp, f) for dp, dn, filenames in os.walk(directory) for f in filenames if os.path.splitext(f)[1].lower() in supported_formats]
     return image_paths
 
@@ -330,4 +418,6 @@ def main():
     root.mainloop()
 
 if __name__ == "__main__":
+    cv2.ocl.setUseOpenCL(True)
     main()
+    
