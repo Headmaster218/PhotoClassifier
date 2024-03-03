@@ -1,5 +1,5 @@
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, Frame
 import cv2
 import os
 import numpy as np
@@ -20,6 +20,7 @@ class PhotoClassifier:
         self.labels_file = 'jsondata/labels.json'
         self.labels = self.load_labels()
         self.classifications = self.load_classifications()
+
         self.after_id = None
         self.cap = None
         self.video_length = 0
@@ -27,46 +28,62 @@ class PhotoClassifier:
         self.progress_file = 'jsondata/progress.json'
         self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./QWERTYUIOPASDFGHJKLZXCVBNM"  # 按键绑定到分类标签
 
+        # 获取屏幕分辨率
+        self.screen_width = master.winfo_screenwidth()
+        self.screen_height = master.winfo_screenheight()
+        self.pic_target_w = self.screen_width
+        self.pic_target_h = self.screen_height*0.6
         self.master.title("照片分类器")
+        master.state('zoomed')
 
-        self.path_entry = Entry(master)
-        self.path_entry.pack()
+        # 创建一个Frame作为容器
+        self.path_frame = Frame(master)
+        self.path_frame.pack()
+
+        # 将Entry放入Frame
+        self.path_entry = Entry(self.path_frame)
+        self.path_entry.grid(row=0, column=0)  # 使用grid布局管理器
         self.path_entry.insert(0, self.load_path())  # 显示当前路径
 
-        self.change_path_button = Button(master, text="修改路径", command=self.change_path)
-        self.change_path_button.pack()
+        # 将Button也放入同一个Frame
+        self.change_path_button = Button(self.path_frame, text="修改路径", command=self.change_path)
+        self.change_path_button.grid(row=0, column=1)  # 放置在Entry旁边
 
         self.image_label = Label(master)
         self.image_label.pack()
-        self.image_label.config(width=960, height=720)
-
 
         self.progress_bar = ttk.Scale(master, from_=0, to=10, orient="horizontal", length="500")
         self.progress_bar.pack()
 
+        #标签frame
         self.buttons_frame = Frame(master)
         self.buttons_frame.pack()
 
         self.init_label_buttons()
 
-        self.new_label_entry = Entry(master)
-        self.new_label_entry.pack()
+        self.add_lable_frame = Frame(master)
+        self.add_lable_frame.pack()
 
-        self.add_label_button = Button(master, text="添加新分类", command=self.add_new_label)
-        self.add_label_button.pack()
+        self.new_label_entry = Entry(self.add_lable_frame)
+        self.new_label_entry.grid(row=0, column=0)
 
-        self.next_button = Button(master, text="下一张(Enter)", command=self.next_image)
-        self.next_button.pack()
+        self.add_label_button = Button(self.add_lable_frame, text="<-添加新分类", command=self.add_new_label)
+        self.add_label_button.grid(row=0, column=1)
 
         self.progress_label = Label(master, text="进度：0/0")
         self.progress_label.pack()
 
-        self.prev_button = Button(master, text="上一张(Backspace)", command=self.show_prev_image)
-        self.prev_button.pack(side=LEFT)
+        self.button_frame = Frame(master)
+        self.button_frame.pack()
 
+        self.prev_button = Button(self.button_frame, text="上一张(Backspace)", command=self.show_prev_image)
+        self.prev_button.grid(row=0, column=0, padx=(0, 5))  # 添加空位
 
-        self.save_all_button = Button(master, text="保存进度", command=self.save_all)
-        self.save_all_button.pack()
+        self.save_all_button = Button(self.button_frame, text="保存进度", command=self.save_all)
+        self.save_all_button.grid(row=0, column=1, padx=5)  # 在保存进度和下一张按钮之间添加空位
+
+        self.next_button = Button(self.button_frame, text="下一张(Enter)", command=self.next_image)
+        self.next_button.grid(row=0, column=2)
 
         self.master.bind('<space>', self.copy_last_classification)
         self.master.bind('<Return>', self.next_image)
@@ -232,34 +249,34 @@ class PhotoClassifier:
             return
         length = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        self.progress_bar.configure(from_=0, to=length, command=self.update_video_frame)      #切换视频时卡顿严重，怀疑是没停止播放导致。
-        self.master.focus_set()  # 确保主窗口获得焦点
-        self.update_frame()
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        frame_skip = int(fps/3)  # 定义跳过的帧数
+        self.progress_bar.configure(from_=0, to=length, command=self.update_video_frame)
+        # self.master.focus_set()  # 确保主窗口获得焦点
+        new_w,new_h=self.calculate_scale()
+        self.update_frame(frame_skip, new_w,new_h)
 
-    def update_frame(self):
-        if self.cap and self.cap.isOpened():# and self.playing:
+    def calculate_scale(self):
+            target_width = self.pic_target_w
+            target_height = self.pic_target_h
+            if self.cap:
+                ret, frame = self.cap.read()
+                h, w = frame.shape[:2]
+                # 计算缩放比例并确保等比例缩放
+                scale = min(target_width / w, target_height / h)
+                new_w, new_h = int(w * scale), int(h * scale)
+                return new_w,new_h
+
+    def update_frame(self,frame_skip,new_w,new_h):
+        if self.cap and self.cap.isOpened():
             ret, frame = self.cap.read()
-            target_width = 960
-            target_height = 720
-            h, w = frame.shape[:2]
+            for _ in range(frame_skip):  # 读取并跳过指定数量的帧
+                self.cap.grab()
+            ret, frame = self.cap.read()
 
-            # 计算缩放比例并确保等比例缩放
-            scale = min(target_width / w, target_height / h)
-            new_w, new_h = int(w * scale), int(h * scale)
-            resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)  #视频缩放依然有问题。
-
-            # # 创建新的背景图像
-            # background = np.zeros((target_height, target_width, 3), dtype=np.uint8)
-
-            # # 计算居中粘贴的位置
-            # x_offset = (target_width - new_w) // 2
-            # y_offset = (target_height - new_h) // 2
-
-            # # 将缩放后的帧粘贴到背景中
-            # background[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized_frame
+            resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
 
             # 将OpenCV图像转换为PIL图像以便使用ImageTk显示
-            # img = Image.fromarray(cv2.cvtColor(background, cv2.COLOR_BGR2RGB))
             img = Image.fromarray(cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB))
 
             photo_image = ImageTk.PhotoImage(image=img)
@@ -271,7 +288,7 @@ class PhotoClassifier:
             self.progress_bar.set(current_frame)
 
             # 设置定时器以继续读取下一帧                
-            self.after_id = self.master.after(20, self.update_frame)
+            self.after_id = self.master.after(100, lambda: self.update_frame(frame_skip,new_w,new_h))
         else:
             self.stop_playing()
 
@@ -279,13 +296,13 @@ class PhotoClassifier:
         if self.cap:
             frame_number = int(float(pos))
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            ret, frame = self.cap.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                img = Image.fromarray(frame)
-                photo_image = ImageTk.PhotoImage(image=img)
-                self.image_label.configure(image=photo_image)
-                self.image_label.image = photo_image
+            # ret, frame = self.cap.read()
+            # if ret:
+            #     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            #     img = Image.fromarray(frame)
+            #     photo_image = ImageTk.PhotoImage(image=img)
+            #     self.image_label.configure(image=photo_image)
+            #     self.image_label.image = photo_image
 
     def display_photo(self, image_path):
         # 尝试使用pathlib处理路径，以提高兼容性
@@ -301,9 +318,9 @@ class PhotoClassifier:
         except Exception as e:
             messagebox.showerror("错误", f"加载图片失败：{e}")
             return
-        
+        w,h = self.calculate_scale()
         # 接下来是图片处理和显示的代码
-        img = cv2.resize(img, (960, 720))
+        img = cv2.resize(img, (w, h))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # 将BGR转换为RGB
         img_pil = Image.fromarray(img)
         img_tk = ImageTk.PhotoImage(image=img_pil)
@@ -418,6 +435,6 @@ def main():
     root.mainloop()
 
 if __name__ == "__main__":
-    cv2.ocl.setUseOpenCL(True)
+    # cv2.ocl.setUseOpenCL(True)
     main()
     
