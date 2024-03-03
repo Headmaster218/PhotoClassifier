@@ -6,6 +6,7 @@ import numpy as np
 from tkinter import *
 from PIL import Image, ImageTk
 import json
+import time
 
 def is_video_file(file_path):
     video_extensions = ['.mp4', '.avi', '.mov']  # 视频文件扩展名列表
@@ -15,11 +16,12 @@ def is_video_file(file_path):
 class PhotoClassifier:
     def __init__(self, master):
         self.master = master
-        image_path = self.load_path()  # 加载路径
-        self.image_paths = find_images(image_path)
         self.labels_file = 'jsondata/labels.json'
         self.labels = self.load_labels()
         self.classifications = self.load_classifications()
+        media_path = self.load_path()  # 加载路径
+        self.media_paths = find_medias(media_path)
+
 
         self.after_id = None
         self.cap = None
@@ -49,11 +51,8 @@ class PhotoClassifier:
         self.change_path_button = Button(self.path_frame, text="修改路径", command=self.change_path)
         self.change_path_button.grid(row=0, column=1)  # 放置在Entry旁边
 
-        self.image_label = Label(master)
-        self.image_label.pack()
-
-        self.progress_bar = ttk.Scale(master, from_=0, to=10, orient="horizontal", length="500")
-        self.progress_bar.pack()
+        self.media_label = Label(master)
+        self.media_label.pack()
 
         #标签frame
         self.buttons_frame = Frame(master)
@@ -76,22 +75,21 @@ class PhotoClassifier:
         self.button_frame = Frame(master)
         self.button_frame.pack()
 
-        self.prev_button = Button(self.button_frame, text="上一张(Backspace)", command=self.show_prev_image)
+        self.prev_button = Button(self.button_frame, text="上一张(Backspace)", command=self.show_prev_media)
         self.prev_button.grid(row=0, column=0, padx=(0, 5))  # 添加空位
 
         self.save_all_button = Button(self.button_frame, text="保存进度", command=self.save_all)
         self.save_all_button.grid(row=0, column=1, padx=5)  # 在保存进度和下一张按钮之间添加空位
 
-        self.next_button = Button(self.button_frame, text="下一张(Enter)", command=self.next_image)
+        self.next_button = Button(self.button_frame, text="下一张(Enter)", command=self.next_media)
         self.next_button.grid(row=0, column=2)
 
         self.master.bind('<space>', self.copy_last_classification)
-        self.master.bind('<Return>', self.next_image)
-        self.master.bind('<BackSpace>', self.show_prev_image)
-
+        self.master.bind('<Return>', self.next_media)
+        self.master.bind('<BackSpace>', self.show_prev_media)
 
         self.load_progress()
-        self.show_image()
+        self.show_media()
 
         messagebox.showinfo("欢迎使用照片分类器", "教程内容：\n"
                              "- 使用“修改路径”按钮更改图片文件夹。\n"
@@ -128,8 +126,8 @@ class PhotoClassifier:
             self.save_path(new_path)  # 保存新路径到path.json
             self.path_entry.delete(0, END)
             self.path_entry.insert(0, new_path)  # 更新文本框显示
-            self.image_paths = find_images(new_path)  # 更新图片路径列表
-            self.show_image()  # 显示新路径下的第一张图片
+            self.media_paths = find_medias(new_path)  # 更新图片路径列表
+            self.show_media()  # 显示新路径下的第一张图片
 
     def init_label_buttons(self):
         for i, label in enumerate(self.labels):
@@ -157,9 +155,9 @@ class PhotoClassifier:
                 break
 
     def copy_last_classification(self, event):
-        if self.current_image_index > 1:  # Ensure there is a last image
-            last_image_path = self.image_paths[self.current_image_index - 1]
-            last_classification = self.classifications.get(last_image_path, [])
+        if self.current_media_index > 1:  # Ensure there is a last media
+            last_media_path = self.media_paths[self.current_media_index - 1]
+            last_classification = self.classifications.get(last_media_path, [])
             for label, btn_var in self.label_buttons:
                 btn_var.set(label in last_classification)
 
@@ -172,61 +170,61 @@ class PhotoClassifier:
         messagebox.showinfo("提示", help_text)
         # self.master.destroy()
 
-    def next_image(self):
+    def next_media(self):
         # 保存当前图片的分类
-        if self.current_image_index < len(self.image_paths):
-            current_image_path = self.image_paths[self.current_image_index]
+        if self.current_media_index < len(self.media_paths):
+            current_media_path = self.media_paths[self.current_media_index]
             selected_labels = [label for label, btn_var in self.label_buttons if btn_var.get()]
 
             # 仅当有选中的标签时，才保存当前图片的分类
             if selected_labels:  # 检查selected_labels非空
-                self.classifications[current_image_path] = selected_labels
+                self.classifications[current_media_path] = selected_labels  #现有的Live标签都是从移动程序加入的。需要在此判断是否为Live。从Find media函数就应该判断视频是否属于Live。此函数中如只有Live也不应该跳过。显示tag时也要忽略Live。
             else:
                 # 如果没有选中的标签，则确保不保存当前图片路径
-                self.classifications.pop(current_image_path, None)
+                self.classifications.pop(current_media_path, None)
 
             # 每10张图片保存一次分类结果和进度，或者在最后一张图片时保存
-            if self.current_image_index % 10 == 0 or self.current_image_index == len(self.image_paths) - 1:
+            if self.current_media_index % 10 == 0 or self.current_media_index == len(self.media_paths) - 1:
                 self.save_classifications()
                 self.save_progress()
 
         # 尝试找到下一张未分类或空分类的图片
-        while self.current_image_index < len(self.image_paths):
-            self.current_image_index += 1  # 移动到下一张图片
-            if self.current_image_index >= len(self.image_paths):
+        while self.current_media_index < len(self.media_paths):
+            self.current_media_index += 1  # 移动到下一张图片
+            if self.current_media_index >= len(self.media_paths):
                 print("从新开始分类")
                 self.save_classifications()  # Save at the end
                 self.save_progress(final=True)
-                self.current_image_index = 0
-                self.show_image()
+                self.current_media_index = 0
+                self.show_media()
                 break
 
-            next_image_path = self.image_paths[self.current_image_index]
+            next_media_path = self.media_paths[self.current_media_index]
             # 检查下一张图片是否未分类或空分类
-            if next_image_path not in self.classifications or not self.classifications[next_image_path]:
-                self.show_image()
+            if next_media_path not in self.classifications or not self.classifications[next_media_path]:
+                self.show_media()
                 break
 
     def update_progress_display(self):
-        progress_text = f"进度：{self.current_image_index + 1}/{len(self.image_paths)}"
+        progress_text = f"进度：{self.current_media_index + 1}/{len(self.media_paths)}"
         self.progress_label.config(text=progress_text)
 
-    def show_image(self):
+    def show_media(self):
         # 在显示新图片之前重置所有标签按钮的选中状态
         self.stop_playing()
         for _, btn_var in self.label_buttons:
             btn_var.set(False)
-        image_path = self.image_paths[self.current_image_index]
-        self.display_image(image_path)
+        media_path = self.media_paths[self.current_media_index]
+        self.display_media(media_path)
         self.update_progress_display()
 
-    def show_prev_image(self, event = None):
-        if self.current_image_index > 0:  # 确保有上一张图片可以显示
-            self.current_image_index -= 1
-            self.show_image()
+    def show_prev_media(self, event = None):
+        if self.current_media_index > 0:  # 确保有上一张图片可以显示
+            self.current_media_index -= 1
+            self.show_media()
             self.update_label_buttons()  # 更新标签按钮的选中状态
 
-    def display_image(self, file_path):
+    def display_media(self, file_path):
         if is_video_file(file_path):
             self.display_video(file_path)
         else:
@@ -247,12 +245,9 @@ class PhotoClassifier:
         if not self.cap.isOpened():
             print("Error opening video stream or file")
             return
-        length = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         fps = self.cap.get(cv2.CAP_PROP_FPS)
         frame_skip = int(fps/3)  # 定义跳过的帧数
-        self.progress_bar.configure(from_=0, to=length, command=self.update_video_frame)
-        # self.master.focus_set()  # 确保主窗口获得焦点
         new_w,new_h=self.calculate_scale()
         self.update_frame(frame_skip, new_w,new_h)
 
@@ -267,42 +262,46 @@ class PhotoClassifier:
                 new_w, new_h = int(w * scale), int(h * scale)
                 return new_w,new_h
 
-    def update_frame(self,frame_skip,new_w,new_h):
+    def update_frame(self, frame_skip, new_w, new_h):
         if self.cap and self.cap.isOpened():
-            ret, frame = self.cap.read()
-            for _ in range(frame_skip):  # 读取并跳过指定数量的帧
-                self.cap.grab()
-            ret, frame = self.cap.read()
+
+            start_time = time.time()  # 获取开始时间
+
+            total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))  # 获取视频总帧数
+            current_frame_number = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))  # 获取当前帧号
+            new_frame_number = current_frame_number + frame_skip  # 计算新的帧号
+
+            # 检查计算得出的新帧号是否超出视频总帧数
+            if new_frame_number >= total_frames:
+                # 如果超出，重置到视频的开始
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            else:
+                # 否则，设置到计算得出的新帧号
+                self.cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame_number)
+
+            ret, frame = self.cap.read()  # 尝试读取下一帧
+            if not ret:  # 检查是否成功读取到帧
+                self.stop_playing()  # 如果没有帧可读，则停止播放
+                self.master.after(100, lambda: self.display_video(self.media_paths[self.current_media_index]))
+                return
 
             resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
-
-            # 将OpenCV图像转换为PIL图像以便使用ImageTk显示
             img = Image.fromarray(cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB))
-
             photo_image = ImageTk.PhotoImage(image=img)
-            self.image_label.configure(image=photo_image)
-            self.image_label.image = photo_image  # 避免垃圾回收
+            self.media_label.configure(image=photo_image)
+            self.media_label.image = photo_image  # 避免垃圾回收
 
-            # 更新进度条位置
-            current_frame = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))
-            self.progress_bar.set(current_frame)
-
-            # 设置定时器以继续读取下一帧                
-            self.after_id = self.master.after(100, lambda: self.update_frame(frame_skip,new_w,new_h))
+            end_time = time.time()  # 获取结束时间
+            
+            time2delay = max(((1/self.cap.get(cv2.CAP_PROP_FPS))*(frame_skip+1)-(end_time-start_time))*500,5)
+            # print(str({end_time-start_time})+ str({time2delay}))
+            # if time2delay < 6:
+            #     frame_skip = 0
+            # 设置定时器以继续读取下一帧
+            self.master.focus_set()  # 将焦点设置到主窗口   
+            self.after_id = self.master.after(int(time2delay), lambda: self.update_frame(frame_skip,new_w,new_h))
         else:
-            self.stop_playing()
-
-    def update_video_frame(self, pos):
-        if self.cap:
-            frame_number = int(float(pos))
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            # ret, frame = self.cap.read()
-            # if ret:
-            #     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            #     img = Image.fromarray(frame)
-            #     photo_image = ImageTk.PhotoImage(image=img)
-            #     self.image_label.configure(image=photo_image)
-            #     self.image_label.image = photo_image
+            self.display_video(self.media_paths[self.current_media_index])
 
     def display_photo(self, image_path):
         # 尝试使用pathlib处理路径，以提高兼容性
@@ -378,9 +377,9 @@ class PhotoClassifier:
         return len(keys_per_row) - 1, position_in_cycle - total_keys_passed
 
     def update_label_buttons(self):
-        if self.current_image_index < len(self.image_paths):
-            current_image_path = self.image_paths[self.current_image_index]
-            selected_labels = self.classifications.get(current_image_path, [])
+        if self.current_media_index < len(self.media_paths):
+            current_media_path = self.media_paths[self.current_media_index]
+            selected_labels = self.classifications.get(current_media_path, [])
             for label, btn_var in self.label_buttons:
                 btn_var.set(label in selected_labels)
 
@@ -411,7 +410,7 @@ class PhotoClassifier:
             return []
 
     def save_progress(self, final=False):
-        progress = {'current_image_index': 0 if final else self.current_image_index}
+        progress = {'current_media_index': 0 if final else self.current_media_index}
         with open(self.progress_file, 'w') as json_file:
             json.dump(progress, json_file)
 
@@ -419,19 +418,19 @@ class PhotoClassifier:
         try:
             with open(self.progress_file, 'r') as json_file:
                 progress = json.load(json_file)
-                self.current_image_index = progress.get('current_image_index', 0)
+                self.current_media_index = progress.get('current_media_index', 0)
         except FileNotFoundError:
-            self.current_image_index = 0
+            self.current_media_index = 0
 
-def find_images(directory):
+def find_medias(directory):
     # supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".jp2"]
     supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".jp2", ".mp4", ".avi", ".mov"]  # 添加视频格式
-    image_paths = [os.path.join(dp, f) for dp, dn, filenames in os.walk(directory) for f in filenames if os.path.splitext(f)[1].lower() in supported_formats]
-    return image_paths
+    media_paths = [os.path.join(dp, f) for dp, dn, filenames in os.walk(directory) for f in filenames if os.path.splitext(f)[1].lower() in supported_formats]
+    return media_paths
 
 def main():
     root = Tk()
-    app = PhotoClassifier(root)  # 不再需要在这里传递image_paths
+    app = PhotoClassifier(root)  # 不再需要在这里传递media_paths
     root.mainloop()
 
 if __name__ == "__main__":
