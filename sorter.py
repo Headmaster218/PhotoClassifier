@@ -21,6 +21,7 @@ class PhotoClassifier:
         self.classifications = self.load_classifications()
         media_path = self.load_path()  # 加载路径
         self.media_paths = find_medias(media_path)
+        self.live_pics_paths = self.find_live_photos(self.media_paths)
 
 
         self.after_id = None
@@ -101,6 +102,26 @@ class PhotoClassifier:
                              "- 会在当前目录创建jsondata文件夹以存储数据\n"
                              "- 请不要移动照片的位置和改名以确保数据准确。\n")
 
+    def find_live_photos(self,media_paths):
+        live_photos = []  # 存储找到的Live照片对
+        photo_exts = ['.jpg', '.jpeg', '.png', '.heic']  # 常见的图片文件扩展名列表
+
+        for mov_path in media_paths:
+            # 只处理.MOV文件
+            if mov_path.lower().endswith(".mov"):
+                base_path, _ = os.path.splitext(mov_path)
+
+                # 尝试找到与.MOV文件同名的照片文件
+                for ext in photo_exts:
+                    photo_path = base_path + ext
+                    # 检查构造的照片文件路径是否存在于媒体文件列表中
+                    # 这里需要确保大小写匹配，因为文件系统可能区分大小写
+                    if any(photo_path.lower() == p.lower() for p in media_paths):
+                        live_photos.append((photo_path, mov_path))  # 将找到的文件对添加到结果列表中
+                        break  # 找到匹配的照片文件后不再继续查找其他扩展名
+
+        return live_photos
+
     def save_path(self, new_path):
         data = {'image_path': new_path}
         Path('jsondata/path.json').write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding='utf-8')
@@ -176,9 +197,13 @@ class PhotoClassifier:
             current_media_path = self.media_paths[self.current_media_index]
             selected_labels = [label for label, btn_var in self.label_buttons if btn_var.get()]
 
+            # 检查当前照片是否为Live照片，如果是，则自动添加"Live"标签
+            if any(current_media_path in pair for pair in self.live_pics_paths):
+                selected_labels.append("Live")  # 添加"Live"标签
+
             # 仅当有选中的标签时，才保存当前图片的分类
             if selected_labels:  # 检查selected_labels非空
-                self.classifications[current_media_path] = selected_labels  #现有的Live标签都是从移动程序加入的。需要在此判断是否为Live。从Find media函数就应该判断视频是否属于Live。此函数中如只有Live也不应该跳过。显示tag时也要忽略Live。
+                self.classifications[current_media_path] = selected_labels
             else:
                 # 如果没有选中的标签，则确保不保存当前图片路径
                 self.classifications.pop(current_media_path, None)
@@ -200,6 +225,10 @@ class PhotoClassifier:
                 break
 
             next_media_path = self.media_paths[self.current_media_index]
+            # 如果是Live照片的视频部分，则跳过
+            if any(next_media_path == mov_path for _, mov_path in self.live_pics_paths):
+                continue  # 跳过这个MOV文件
+
             # 检查下一张图片是否未分类或空分类
             if next_media_path not in self.classifications or not self.classifications[next_media_path]:
                 self.show_media()
