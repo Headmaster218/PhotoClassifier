@@ -287,50 +287,92 @@ class ClassifiedPhotoAlbum:
         for index, photo_path in enumerate(photos_to_display):
             row = index // self.columns
             column = index % self.columns
-            try:
-                img = Image.open(photo_path)
-                img.thumbnail((300, 300))
-                photo_tags = self.photos.get(photo_path, [])
-                if "Live" in photo_tags:
-                    draw = ImageDraw.Draw(img, "RGBA")
-                    font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
-                    text = "Live"
-                    textwidth, textheight = draw.textsize(text, font=font)
-                    # 在图片上绘制半透明矩形作为文本背景
-                    draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
-                    # 在半透明矩形上绘制文本
-                    draw.text((10, 10), text, fill=(255,0,0,255), font=font)
+            file_extension = os.path.splitext(photo_path)[1].lower()
+
+            if file_extension in ['.jpg', '.jpeg', '.png']:  # 图片文件
+                try:
+                    img = Image.open(photo_path)
+                    img.thumbnail((300, 300))
+                    photo_tags = self.photos.get(photo_path, [])
+                    if "Live" in photo_tags:
+                        draw = ImageDraw.Draw(img, "RGBA")
+                        font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
+                        text = "Live"
+                        textwidth, textheight = draw.textsize(text, font=font)
+                        # 在图片上绘制半透明矩形作为文本背景
+                        draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
+                        # 在半透明矩形上绘制文本
+                        draw.text((10, 10), text, fill=(255,0,0,255), font=font)
+                    photo_image = ImageTk.PhotoImage(img)
+                    self.photo_images.append(photo_image)
+                except (FileNotFoundError, UnidentifiedImageError):
+                    img = Image.new('RGB', (300, 300), color='gray')
+                    photo_image = ImageTk.PhotoImage(img)
+                    self.photo_images.append(photo_image)
+                    print(f"Error loading image: {photo_path}")
+
+            elif file_extension in ['.mp4', '.mov']:  # 视频文件
+                cap = cv2.VideoCapture(photo_path)
+                ret, frame = cap.read()  # 读取第一帧
+                if ret:
+                    # 将第一帧转换为PIL图像并缩略
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    img = Image.fromarray(frame)
+                    img.thumbnail((300, 300))
+                else:
+                    # 如果无法读取视频，显示一个黑色的占位符
+                    img = Image.new('RGB', (300, 300), color='black')
+                    draw = ImageDraw.Draw(img)
+                    draw.text((10, 10), "Error loading video", fill="white")
+                cap.release()
+                draw = ImageDraw.Draw(img)
+                font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
+                text = "Video"
+                textwidth, textheight = draw.textsize(text, font=font)
+                # 在图片上绘制半透明矩形作为文本背景
+                draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
+                # 在半透明矩形上绘制文本
+                draw.text((10, 10), text, fill=(0,255,0,255), font=font)
                 photo_image = ImageTk.PhotoImage(img)
                 self.photo_images.append(photo_image)
-            except (FileNotFoundError, UnidentifiedImageError):
-                img = Image.new('RGB', (300, 300), color='gray')
-                photo_image = ImageTk.PhotoImage(img)
-                self.photo_images.append(photo_image)
-                print(f"Error loading image: {photo_path}")
 
             button = tk.Button(self.photos_frame, image=photo_image, command=lambda p=photo_path: self.open_photo_viewer(p))
             button.grid(row=row, column=column, padx=5, pady=5)
 
-            if "Live" in photo_tags:
+            if file_extension in ['.mp4', '.mov']:
                 button.bind("<Enter>", lambda event, path=photo_path: self.start_live_video(event, path))
                 button.bind("<Leave>", lambda event: self.stop_live_video())
 
         self.update_pagination_info()
 
-    def start_live_video(self, event, photo_path):
+    def start_live_video(self, event, file_path):
         # 如果有视频正在播放，先停止它
         if self.currently_playing_widget and self.currently_playing_widget != event.widget:
             self.stop_live_video()
-        
+
         self.stop_video_flag.clear()  # 清除停止标志以开始播放
-        base, _ = os.path.splitext(photo_path)
-        live_video_path = f"{base}.MOV"
-        if not os.path.exists(live_video_path):
+
+        # 检查文件类型
+        base, extension = os.path.splitext(file_path)
+        if extension.lower() in ['.jpg', '.jpeg', '.png']:
+            # 如果是图片文件，查找对应的MOV视频文件
+            video_path = f"{base}.MOV"
+        elif extension.lower() in ['.mp4', '.mov']:
+            # 如果直接是MP4视频文件
+            video_path = file_path
+        else:
+            # 如果不是支持的文件类型，则不进行操作
+            return
+
+        # 确认视频文件存在
+        if not os.path.exists(video_path):
+            print("Video file does not exist:", video_path)
             return
 
         # 记录当前播放视频的widget
         self.currently_playing_widget = event.widget
-        video_thread = threading.Thread(target=self.play_video, args=(live_video_path, event.widget,))
+        # 使用传入的视频文件路径启动视频播放线程
+        video_thread = threading.Thread(target=self.play_video, args=(video_path, event.widget,))
         video_thread.start()
 
     def stop_live_video(self):
