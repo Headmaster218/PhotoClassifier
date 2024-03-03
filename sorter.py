@@ -16,10 +16,10 @@ def is_video_file(file_path):
 class PhotoClassifier:
     def __init__(self, master):
         self.master = master
+        media_path = self.load_path()  # 加载路径
         self.labels_file = 'jsondata/labels.json'
         self.labels = self.load_labels()
         self.classifications = self.load_classifications()
-        media_path = self.load_path()  # 加载路径
         self.media_paths = find_medias(media_path)
         self.live_pics_paths = self.find_live_photos(self.media_paths)
 
@@ -27,8 +27,8 @@ class PhotoClassifier:
         self.after_id = None
         self.cap = None
         self.video_length = 0
+        self.current_media_index = -1
         self.label_buttons = []
-        self.progress_file = 'jsondata/progress.json'
         self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./QWERTYUIOPASDFGHJKLZXCVBNM"  # 按键绑定到分类标签
 
         # 获取屏幕分辨率
@@ -89,8 +89,7 @@ class PhotoClassifier:
         self.master.bind('<Return>', self.next_media)
         self.master.bind('<BackSpace>', self.show_prev_media)
 
-        self.load_progress()
-        self.show_media()
+        self.next_media()
 
         messagebox.showinfo("欢迎使用照片分类器", "教程内容：\n"
                              "- 使用“修改路径”按钮更改图片文件夹。\n"
@@ -127,11 +126,18 @@ class PhotoClassifier:
         Path('jsondata/path.json').write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding='utf-8')
 
     def load_path(self):
-        path_file = Path('jsondata/path.json')
+        json_data_dir = Path('jsondata')
+        path_file = json_data_dir / 'path.json'
+
+        # 检查jsondata文件夹是否存在，如果不存在，则创建它
+        if not json_data_dir.exists():
+            json_data_dir.mkdir(parents=True, exist_ok=True)
+
         if path_file.exists():
             data = json.loads(path_file.read_text(encoding='utf-8'))
             return data.get('image_path')
         else:
+            messagebox.showinfo("初次使用","请先选择照片存储的文件夹。\n如果已经分类过了，又看到此消息，则代表数据库被删除。请恢复！")
             new_path = filedialog.askdirectory()
             if new_path:
                 self.save_path(new_path)
@@ -184,12 +190,10 @@ class PhotoClassifier:
 
     def save_all(self):
         self.save_classifications()
-        self.save_progress()
         help_text = """
             保存成功！
             """
         messagebox.showinfo("提示", help_text)
-        # self.master.destroy()
 
     def next_media(self):
         # 保存当前图片的分类
@@ -211,17 +215,15 @@ class PhotoClassifier:
             # 每10张图片保存一次分类结果和进度，或者在最后一张图片时保存
             if self.current_media_index % 10 == 0 or self.current_media_index == len(self.media_paths) - 1:
                 self.save_classifications()
-                self.save_progress()
 
         # 尝试找到下一张未分类或空分类的图片
         while self.current_media_index < len(self.media_paths):
             self.current_media_index += 1  # 移动到下一张图片
             if self.current_media_index >= len(self.media_paths):
-                print("从新开始分类")
+                messagebox.showinfo("提示","已到最后一张！将显示尚未分类的媒体。")
                 self.save_classifications()  # Save at the end
-                self.save_progress(final=True)
-                self.current_media_index = 0
-                self.show_media()
+                self.current_media_index = -1
+                self.master.after(50,self.next_media)
                 break
 
             next_media_path = self.media_paths[self.current_media_index]
@@ -277,19 +279,20 @@ class PhotoClassifier:
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         fps = self.cap.get(cv2.CAP_PROP_FPS)
         frame_skip = int(fps/3)  # 定义跳过的帧数
-        new_w,new_h=self.calculate_scale()
+        if self.cap:
+            ret, frame = self.cap.read()
+            h, w = frame.shape[:2]
+        new_w,new_h=self.calculate_scale(h,w)
         self.update_frame(frame_skip, new_w,new_h)
 
-    def calculate_scale(self):
+    def calculate_scale(self,h,w):
             target_width = self.pic_target_w
             target_height = self.pic_target_h
-            if self.cap:
-                ret, frame = self.cap.read()
-                h, w = frame.shape[:2]
+
                 # 计算缩放比例并确保等比例缩放
-                scale = min(target_width / w, target_height / h)
-                new_w, new_h = int(w * scale), int(h * scale)
-                return new_w,new_h
+            scale = min(target_width / w, target_height / h)
+            new_w, new_h = int(w * scale), int(h * scale)
+            return new_w,new_h
 
     def update_frame(self, frame_skip, new_w, new_h):
         if self.cap and self.cap.isOpened():
@@ -314,15 +317,22 @@ class PhotoClassifier:
                 self.master.after(100, lambda: self.display_video(self.media_paths[self.current_media_index]))
                 return
 
-            resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
-            img = Image.fromarray(cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB))
-            photo_image = ImageTk.PhotoImage(image=img)
+            # resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+            # img = Image.fromarray(cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB))
+            # photo_image = ImageTk.PhotoImage(image=img)
+            # self.media_label.configure(image=photo_image)
+            # self.media_label.image = photo_image  # 避免垃圾回收
+
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame)
+            img.thumbnail((new_w, new_h))
+            photo_image = ImageTk.PhotoImage(img)
             self.media_label.configure(image=photo_image)
             self.media_label.image = photo_image  # 避免垃圾回收
 
             end_time = time.time()  # 获取结束时间
             
-            time2delay = max(((1/self.cap.get(cv2.CAP_PROP_FPS))*(frame_skip+1)-(end_time-start_time))*500,5)
+            time2delay = max(((1/self.cap.get(cv2.CAP_PROP_FPS))*(frame_skip+1)-(end_time-start_time))*300,5)
             # print(str({end_time-start_time})+ str({time2delay}))
             # if time2delay < 6:
             #     frame_skip = 0
@@ -346,14 +356,14 @@ class PhotoClassifier:
         except Exception as e:
             messagebox.showerror("错误", f"加载图片失败：{e}")
             return
-        w,h = self.calculate_scale()
+        w,h = self.calculate_scale(img.shape[0],img.shape[1])
         # 接下来是图片处理和显示的代码
         img = cv2.resize(img, (w, h))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # 将BGR转换为RGB
         img_pil = Image.fromarray(img)
         img_tk = ImageTk.PhotoImage(image=img_pil)
-        self.image_label.imgtk = img_tk
-        self.image_label.configure(image=img_tk)
+        self.media_label.imgtk = img_tk
+        self.media_label.configure(image=img_tk)
 
     def add_new_label(self):
         new_label = self.new_label_entry.get().strip()
@@ -437,19 +447,6 @@ class PhotoClassifier:
                 return json.load(json_file)
         except FileNotFoundError:
             return []
-
-    def save_progress(self, final=False):
-        progress = {'current_media_index': 0 if final else self.current_media_index}
-        with open(self.progress_file, 'w') as json_file:
-            json.dump(progress, json_file)
-
-    def load_progress(self):
-        try:
-            with open(self.progress_file, 'r') as json_file:
-                progress = json.load(json_file)
-                self.current_media_index = progress.get('current_media_index', 0)
-        except FileNotFoundError:
-            self.current_media_index = 0
 
 def find_medias(directory):
     # supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".jp2"]

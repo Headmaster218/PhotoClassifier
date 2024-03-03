@@ -127,8 +127,12 @@ class ClassifiedPhotoAlbum:
         self.current_category_photos = []  # 初始化为空列表
         self.currently_playing_widget = None  # 追踪当前播放视频的widget
 
+        # 获取屏幕分辨率
+        self.screen_width = master.winfo_screenwidth()
+        self.screen_height = master.winfo_screenheight()
         self.rows = 3
         self.columns = 6
+        self.target_thumb_size = int((self.screen_width-100)/6),int((self.screen_height*0.85)/3)
         self.photos_per_page = self.rows * self.columns
         self.current_page = 0
 
@@ -292,7 +296,7 @@ class ClassifiedPhotoAlbum:
             if file_extension in ['.jpg', '.jpeg', '.png']:  # 图片文件
                 try:
                     img = Image.open(photo_path)
-                    img.thumbnail((300, 300))
+                    img.thumbnail(self.target_thumb_size)
                     photo_tags = self.photos.get(photo_path, [])
                     if "Live" in photo_tags:
                         draw = ImageDraw.Draw(img, "RGBA")
@@ -306,7 +310,7 @@ class ClassifiedPhotoAlbum:
                     photo_image = ImageTk.PhotoImage(img)
                     self.photo_images.append(photo_image)
                 except (FileNotFoundError, UnidentifiedImageError):
-                    img = Image.new('RGB', (300, 300), color='gray')
+                    img = Image.new('RGB', self.target_thumb_size, color='gray')
                     photo_image = ImageTk.PhotoImage(img)
                     self.photo_images.append(photo_image)
                     print(f"Error loading image: {photo_path}")
@@ -318,10 +322,10 @@ class ClassifiedPhotoAlbum:
                     # 将第一帧转换为PIL图像并缩略
                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     img = Image.fromarray(frame)
-                    img.thumbnail((300, 300))
+                    img.thumbnail(self.target_thumb_size)
                 else:
                     # 如果无法读取视频，显示一个黑色的占位符
-                    img = Image.new('RGB', (300, 300), color='black')
+                    img = Image.new('RGB', self.target_thumb_size, color='black')
                     draw = ImageDraw.Draw(img)
                     draw.text((10, 10), "Error loading video", fill="white")
                 cap.release()
@@ -339,7 +343,7 @@ class ClassifiedPhotoAlbum:
             button = tk.Button(self.photos_frame, image=photo_image, command=lambda p=photo_path: self.open_photo_viewer(p))
             button.grid(row=row, column=column, padx=5, pady=5)
 
-            if file_extension in ['.mp4', '.mov']:
+            if "Live" in photo_tags:
                 button.bind("<Enter>", lambda event, path=photo_path: self.start_live_video(event, path))
                 button.bind("<Leave>", lambda event: self.stop_live_video())
 
@@ -347,7 +351,7 @@ class ClassifiedPhotoAlbum:
 
     def start_live_video(self, event, file_path):
         # 如果有视频正在播放，先停止它
-        if self.currently_playing_widget and self.currently_playing_widget != event.widget:
+        if self.currently_playing_widget:
             self.stop_live_video()
 
         self.stop_video_flag.clear()  # 清除停止标志以开始播放
@@ -379,7 +383,7 @@ class ClassifiedPhotoAlbum:
         if self.currently_playing_widget:
             self.stop_video_flag.set()  # 设置停止标志以停止视频播放
             # 等待视频播放线程结束，或者设置一定超时时间
-            self.stop_video_flag.wait(timeout=1.0)  # 假设等待线程结束或超时
+            self.stop_video_flag.wait(timeout=0.2)  # 假设等待线程结束或超时
             # 恢复原始图片
             original_image = self.currently_playing_widget.cget("image")
             self.currently_playing_widget.config(image=original_image)
@@ -391,13 +395,13 @@ class ClassifiedPhotoAlbum:
         original_image = widget.cget("image")
         cap = cv2.VideoCapture(video_path)
         fps = int(cap.get(cv2.CAP_PROP_FPS))
-        wait_time = max(1, int(1000 / fps))
+        wait_time = max(1, int(800 / fps))
         while not self.stop_video_flag.is_set():
             ret, frame = cap.read()
             if ret:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 img = Image.fromarray(frame)
-                img.thumbnail((300, 300))
+                img.thumbnail(self.target_thumb_size)
                 photo_image = ImageTk.PhotoImage(img)
                 widget.config(image=photo_image)
                 widget.image = photo_image
