@@ -86,8 +86,9 @@ class PhotoClassifier:
         self.next_button.grid(row=0, column=2)
 
         self.master.bind('<space>', self.copy_last_classification)
-        self.master.bind('<Return>', self.next_media)
+        self.master.bind('<Return>', lambda event: self.next_media())
         self.master.bind('<BackSpace>', self.show_prev_media)
+        self.master.focus_set()
 
         self.next_media()
 
@@ -138,7 +139,7 @@ class PhotoClassifier:
             return data.get('image_path')
         else:
             messagebox.showinfo("初次使用","请先选择照片存储的文件夹。\n如果已经分类过了，又看到此消息，则代表数据库被删除。请恢复！")
-            new_path = filedialog.askdirectory()
+            new_path = filedialog.askdirectory(initialdir = '.')
             if new_path:
                 self.save_path(new_path)
                 return new_path
@@ -196,6 +197,9 @@ class PhotoClassifier:
         messagebox.showinfo("提示", help_text)
 
     def next_media(self):
+        self.master.focus_force()
+        self.master.focus_set()
+        self.stop_playing()
         # 保存当前图片的分类
         if self.current_media_index < len(self.media_paths):
             current_media_path = self.media_paths[self.current_media_index]
@@ -337,8 +341,8 @@ class PhotoClassifier:
             # if time2delay < 6:
             #     frame_skip = 0
             # 设置定时器以继续读取下一帧
-            self.master.focus_set()  # 将焦点设置到主窗口   
-            self.after_id = self.master.after(int(time2delay), lambda: self.update_frame(frame_skip,new_w,new_h))
+            # self.master.focus_set()  # 将焦点设置到主窗口   
+            self.after_id = self.master.after(int(time2delay), lambda: self.update_frame(frame_skip,new_w,new_h))  #无法添加新标签，键盘快捷键失效。
         else:
             self.display_video(self.media_paths[self.current_media_index])
 

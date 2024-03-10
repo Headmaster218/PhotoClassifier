@@ -1,3 +1,4 @@
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import heic2jpg  # 处理HEIC到JPG转换的脚本
@@ -5,6 +6,7 @@ import sorter  # 图片分类器的脚本
 import album  # 分类相册浏览的脚本
 import find_similar_pic  # 查找相似图片的脚本
 import del_similar_pic  # 手动选择并删除相似照片的脚本
+import 幻灯片
 
 class MainApplication(tk.Tk):
     def __init__(self):
@@ -26,6 +28,7 @@ class MainApplication(tk.Tk):
         # 创建并配置按钮
         ttk.Button(frame, text='图片分类器', command=self.open_sorter).pack(pady=5, fill=tk.X)
         ttk.Button(frame, text='分类浏览相册', command=self.open_album).pack(pady=5, fill=tk.X)
+        ttk.Button(frame, text='幻灯片播放', command=self.open_幻灯片).pack(pady=5, fill=tk.X)
         ttk.Button(frame, text='转换指定文件夹中的HEIC到JPG', command=self.convert_heic).pack(pady=5, fill=tk.X)
         ttk.Button(frame, text='查找相似图片', command=self.open_find_similar_pic).pack(pady=5, fill=tk.X)
         ttk.Button(frame, text='手动选择并删除相似照片', command=self.open_del_similar_pic).pack(pady=5, fill=tk.X)
@@ -48,6 +51,11 @@ class MainApplication(tk.Tk):
         sorter_window.title("图片分类器")
         app = sorter.PhotoClassifier(sorter_window)
         
+    def open_幻灯片(self):
+        幻灯片_window = tk.Toplevel(self)
+        self.hide_main_windows(幻灯片_window)
+        幻灯片_window.title("幻灯片放映器")
+        app = 幻灯片.SlideshowApp(幻灯片_window)
 
     def open_album(self):
         album_window = tk.Toplevel(self)

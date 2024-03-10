@@ -8,7 +8,6 @@ from collections import defaultdict
 from threading import Thread
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-
 class ImageGraph:
     def __init__(self):
         self.edges = defaultdict(list)
@@ -34,7 +33,6 @@ class ImageGraph:
                 dfs(img, component)
                 components.append(component)
         return components
-
 
 def hash_file(img_path, hash_func):
     try:
@@ -68,7 +66,6 @@ def generate_hash(directory, hash_func, update_progress):
             update_progress(i + 1, total)
 
     return hashes
-
 
 def compare_pair(keys, hashes, threshold, index_pair):
     i, j = index_pair
@@ -140,6 +137,7 @@ class ImageHashGUI:
         hash_func = hash_funcs[self.hash_method.get()]
         
         hashes = generate_hash(self.directory, hash_func, self.update_progress)
+        messagebox.INFO("提示","尚未完成，请勿关闭程序，耐心等待。")
         similar_images_groups = compare_hashes(hashes)
         
         result_file = f"jsondata/相似照片数据.json"

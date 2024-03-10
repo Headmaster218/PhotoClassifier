@@ -76,7 +76,6 @@ def open_image_in_window(root, img_paths, current_index):
         img_label.configure(image=img_tk)
         img_label.image = img_tk  # 防止垃圾回收
 
-
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
 
@@ -93,19 +92,6 @@ def open_image_in_window(root, img_paths, current_index):
         elif event.keysym == 'Left' and current_index > 0:
             current_index -= 1
             update_image(current_index)
-        # elif event.keysym == 'space':
-        #     # 获取当前图片的路径
-        #     current_img_path = img_paths[current_index]
-        #     # 检查当前图片是否已选中，相应地更新选中状态
-        #     if current_img_path in app.selected_for_deletion:
-        #         # 创建一个临时的BooleanVar，设置为False，表示取消选中
-        #         temp_var = tk.BooleanVar(value=False)
-        #         ImageReviewer.mark_for_deletion(app,current_img_path, temp_var)
-        #     else:
-        #         # 创建一个临时的BooleanVar，设置为True，表示选中
-        #         temp_var = tk.BooleanVar(value=True)
-        #         ImageReviewer.mark_for_deletion(app,current_img_path, temp_var)
-
 
     # 绑定键盘事件
     new_window.bind("<Left>", on_key_press)
@@ -146,6 +132,7 @@ class ImageReviewer:
         self.next_button = ttk.Button(self.navigation_frame, text="下一组", state=tk.DISABLED, command=self.next_group)
         self.next_button.pack(side="left", padx=5)
         
+        self.root.bind("<Return>", lambda event: self.confirm_delete())
         self.similar_images = []
         self.current_group_index = 0
         self.selected_for_deletion = []
@@ -258,8 +245,6 @@ class ImageReviewer:
             # 更新内部状态
             self.similar_images = updated_groups
             self.selected_for_deletion.clear()  # 清空待删除列表
-
-            messagebox.showinfo("信息", "选中的图片已删除。")
             
             # 将更新后的数据写回 JSON 文件
             self.write_updated_json()
