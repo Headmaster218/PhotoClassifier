@@ -74,13 +74,24 @@ def compare_pair(keys, hashes, threshold, index_pair):
     return None
 
 def compare_hashes(hashes, threshold=5):
+    # 将哈希值和键组成元组列表，然后按哈希值排序
+    sorted_hashes = sorted(hashes.items(), key=lambda item: str(imagehash.hex_to_hash(item[1])))
+    
     graph = ImageGraph()
-    keys = list(hashes.keys())
-    for i in range(len(keys)):
-        for j in range(i+1, len(keys)):
-            if imagehash.hex_to_hash(hashes[keys[i]]) - imagehash.hex_to_hash(hashes[keys[j]]) < threshold:
-                graph.add_edge(keys[i], keys[j])
+    
+    # 比较相邻元素的哈希值
+    for i in range(len(sorted_hashes)):
+        for j in range(i+1, len(sorted_hashes)):
+            # 计算排序后相邻哈希值的差距
+            hash_diff = imagehash.hex_to_hash(sorted_hashes[i][1]) - imagehash.hex_to_hash(sorted_hashes[j][1])
+            if hash_diff < threshold:
+                graph.add_edge(sorted_hashes[i][0], sorted_hashes[j][0])
+            else:
+                # 一旦遇到大于阈值的情况，后续的差值只会更大，可以提前跳出内层循环
+                break
+    
     return graph.find_connected_components()
+
 
 class ImageHashGUI:
     def __init__(self, root):
@@ -137,7 +148,7 @@ class ImageHashGUI:
         hash_func = hash_funcs[self.hash_method.get()]
         
         hashes = generate_hash(self.directory, hash_func, self.update_progress)
-        messagebox.INFO("提示","尚未完成，请勿关闭程序，耐心等待。")
+        messagebox.showinfo("提示","尚未完成，请勿关闭程序，耐心等待。")
         similar_images_groups = compare_hashes(hashes)
         
         result_file = f"jsondata/相似照片数据.json"

@@ -29,7 +29,7 @@ class PhotoClassifier:
         self.video_length = 0
         self.current_media_index = -1
         self.label_buttons = []
-        self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./QWERTYUIOPASDFGHJKLZXCVBNM"  # 按键绑定到分类标签
+        self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./~!@#$%^&*()_+QWERTYUIOP\{\}|ASDFGHJKL:\"ZXCVBNM<>?"  # 按键绑定到分类标签
 
         # 获取屏幕分辨率
         self.screen_width = master.winfo_screenwidth()
@@ -104,7 +104,7 @@ class PhotoClassifier:
 
     def find_live_photos(self,media_paths):
         live_photos = []  # 存储找到的Live照片对
-        photo_exts = ['.jpg', '.jpeg', '.png', '.heic']  # 常见的图片文件扩展名列表
+        photo_exts = ['.jpg', '.jpeg', '.heic']  # 常见的图片文件扩展名列表
 
         for mov_path in media_paths:
             # 只处理.MOV文件
@@ -282,7 +282,7 @@ class PhotoClassifier:
             return
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         fps = self.cap.get(cv2.CAP_PROP_FPS)
-        frame_skip = int(fps/3)  # 定义跳过的帧数
+        frame_skip = int(fps/5)  # 定义跳过的帧数
         if self.cap:
             ret, frame = self.cap.read()
             h, w = frame.shape[:2]
@@ -336,7 +336,7 @@ class PhotoClassifier:
 
             end_time = time.time()  # 获取结束时间
             
-            time2delay = max(((1/self.cap.get(cv2.CAP_PROP_FPS))*(frame_skip+1)-(end_time-start_time))*300,5)
+            time2delay = max(((1/self.cap.get(cv2.CAP_PROP_FPS))*(frame_skip+1)-(end_time-start_time))*300,20)
             # print(str({end_time-start_time})+ str({time2delay}))
             # if time2delay < 6:
             #     frame_skip = 0
@@ -396,7 +396,7 @@ class PhotoClassifier:
 
     def calculate_row_column_for_new_label(self, key_binding_index):
         # 定义每行最多放置的按键数量
-        keys_per_row = [14, 12, 11, 10]  # 根据实际情况调整
+        keys_per_row = [14, 12, 11, 10, 10, 9, 7]  # 根据实际情况调整
         total_keys = sum(keys_per_row)
 
         # 计算key_binding_index所在的“虚拟”总行数和列数

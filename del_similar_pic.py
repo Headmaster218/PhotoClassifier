@@ -188,29 +188,36 @@ class ImageReviewer:
             self.next_button['state'] = tk.DISABLED
 
     def show_image(self, img_path, group):
-        img_frame = ttk.Frame(self.image_frame)  # 为图片和删除按钮创建一个新的框架
-        img_frame.pack(side="left", padx=10, pady=10)  # 将框架添加到image_frame中
+        # 计算每张图片的显示大小和每行应该显示的图片数量
+        window_width = self.root.winfo_screenwidth()  # 获取宽度
+        num_images = len(group)
+        max_images_per_row = max(1, window_width // 400)  # 假设每张图片最小宽度为200像素
+        num_rows = num_images // max_images_per_row  # 计算行数
+        img_width = 400  # 计算调整后的图片宽度
+
+        # 确定图片在网格中的位置
+        current_index = group.index(img_path)
+        row = current_index // max_images_per_row
+        column = current_index % max_images_per_row
+
+        img_frame = ttk.Frame(self.image_frame)
+        img_frame.grid(row=row, column=column, padx=10, pady=10)  # 使用grid布局
 
         img = read_image(img_path)  # 使用新的读取方式
-        img = resize_image(img)  # 按比例调整大小
+        img = resize_image(img, target_width=img_width)  # 按计算的宽度调整图片大小
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = Image.fromarray(img)
         imgtk = ImageTk.PhotoImage(image=img)
         
-        panel = ttk.Label(img_frame, image=imgtk)  # 将图片标签添加到img_frame而不是直接到self.image_frame
+        panel = ttk.Label(img_frame, image=imgtk)
         panel.image = imgtk
-        panel.pack(side="top")  # 确保图片在框架的顶部
-        
-        # 计算当前图片在组内的索引
-        current_index = group.index(img_path)
-        
-        # 修改lambda函数，传递整个图片组和当前图片的索引
+        panel.pack(side="top")
+
         panel.bind("<Button-1>", lambda e, group=group, current_index=current_index: open_image_in_window(self.root, group, current_index))
 
-        # 为当前图片创建删除复选框，并放置在图片下方
         chk_var = tk.BooleanVar()
-        delete_chk = ttk.Checkbutton(img_frame, text="删除", variable=chk_var)  # 将删除按钮添加到img_frame
-        delete_chk.pack(side="bottom")  # 确保删除按钮在框架的底部
+        delete_chk = ttk.Checkbutton(img_frame, text="删除", variable=chk_var)
+        delete_chk.pack(side="bottom")
         delete_chk.configure(command=lambda var=chk_var, path=img_path: self.mark_for_deletion(path, var))
 
     def mark_for_deletion(self, path, var):

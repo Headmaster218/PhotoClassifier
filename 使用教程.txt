@@ -1,0 +1,9 @@
+1.将指定文件夹中的heic2jpg(没有可以忽略)
+2.假设有三个照片文件夹：Apple，Video，CLassmate等待被标记
+3.使用分类器对每个文件夹依次分类，信息被自动存储在jsondata/classification。
+4.使用pic_mover移动已经被分类的的图片到一个指定的相册文件夹，实现All in one dir。自动解决命名冲突问题
+5.使用相册可分类查看照片视频，并导出选中结果。
+
+
+pyinstaller --onefile --icon=icon.ico --upx-dir=D:\Programing\upx --name=Taglbum main.py --windowed
+

@@ -1,3 +1,4 @@
+
 import json
 import shutil
 import os
@@ -12,7 +13,7 @@ root.withdraw()  # 不显示主窗口
 target_folder = filedialog.askdirectory(title="选择目标文件夹")
 
 # 路径配置
-json_file_path = 'classifications.json'
+json_file_path = 'jsondata/classifications.json'
 
 # 加载JSON文件
 with open(json_file_path, 'r', encoding='utf-8') as f:
