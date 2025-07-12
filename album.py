@@ -4,7 +4,8 @@ from tkinter import ttk, simpledialog, messagebox, filedialog
 from PIL import Image, ImageTk, UnidentifiedImageError, ImageDraw, ImageFont
 import numpy as np
 import cv2
-import json 
+import json
+from pypinyin import lazy_pinyin  # Import lazy_pinyin for pinyin sorting
 import os
 import shutil  # 用于文件复制
 
@@ -277,7 +278,7 @@ class ClassifiedPhotoAlbum:
         for labels in self.photos.values():
             for label in labels:
                 categories[label] = None  # 使用 None 作为值，因为我们只关心键的顺序
-        return list(categories.keys())
+        return sorted(categories.keys(), key=lambda x: lazy_pinyin(x))
 
     def display_photos(self):
         for widget in self.photos_frame.winfo_children():
@@ -302,11 +303,20 @@ class ClassifiedPhotoAlbum:
                         draw = ImageDraw.Draw(img, "RGBA")
                         font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
                         text = "Live"
-                        textwidth, textheight = draw.textsize(text, font=font)
+                        _,_,textwidth, textheight = font.getbbox(text)
                         # 在图片上绘制半透明矩形作为文本背景
                         draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
                         # 在半透明矩形上绘制文本
                         draw.text((10, 10), text, fill=(255,0,0,255), font=font)
+                    if "编辑过" in photo_tags:
+                        draw = ImageDraw.Draw(img, "RGBA")
+                        font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
+                        text = "Edited"
+                        _,_,textwidth, textheight = font.getbbox(text)
+                        # 在图片上绘制半透明矩形作为文本背景
+                        draw.rectangle([(self.target_thumb_size[0] - textwidth - 20, 5), (self.target_thumb_size[0] - 5, 5 + textheight + 10)], fill=(255,255,255,128))
+                        # 在半透明矩形上绘制文本
+                        draw.text((self.target_thumb_size[0] - textwidth - 10, 10), text, fill=(0,255,0,255), font=font)
                     photo_image = ImageTk.PhotoImage(img)
                     self.photo_images.append(photo_image)
                 except (FileNotFoundError, UnidentifiedImageError):

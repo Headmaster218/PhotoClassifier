@@ -1,7 +1,7 @@
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk, Frame
 import cv2
-import os
+import os, re
 import numpy as np
 from tkinter import *
 from PIL import Image, ImageTk
@@ -22,6 +22,7 @@ class PhotoClassifier:
         self.classifications = self.load_classifications()
         self.media_paths = find_medias(media_path)
         self.live_pics_paths = self.find_live_photos(self.media_paths)
+        self.apple_edited_pairs = self.find_apple_edited_pairs(self.media_paths)
 
 
         self.after_id = None
@@ -121,6 +122,42 @@ class PhotoClassifier:
                         break  # 找到匹配的照片文件后不再继续查找其他扩展名
 
         return live_photos
+    
+
+    def find_apple_edited_pairs(self, media_paths):
+        """
+        查找所有符合苹果编辑命名规则的 (编辑文件, 原始文件) 对。
+        规则：编辑文件名在首个数字前插入一个 'E'，扩展名不变。
+        
+        参数：
+            media_paths: List[str]，文件路径列表
+        
+        返回：
+            List[Tuple[str, str]]：格式为 (编辑文件路径, 原始文件路径)
+        """
+        pairs = []
+        
+        # 预处理成小写查找表：filename_lower → full_path
+        name_lookup = {os.path.basename(p).lower(): p for p in media_paths}
+
+        for path in media_paths:
+            fname = os.path.basename(path)
+            name, ext = os.path.splitext(fname)
+
+            # 匹配格式：前缀 + E + 数字部分
+            match = re.match(r'^(.+?)E(\d.*)$', name)
+            if match:
+                # 构造原始文件名（把E去掉，保留扩展名）
+                original_name = match.group(1) + match.group(2) + ext
+                original_name_lc = original_name.lower()
+
+                if original_name_lc in name_lookup:
+                    pairs.append((path, name_lookup[original_name_lc]))
+
+        return pairs
+
+
+
 
     def save_path(self, new_path):
         data = {'image_path': new_path}
@@ -208,6 +245,10 @@ class PhotoClassifier:
             # 检查当前照片是否为Live照片，如果是，则自动添加"Live"标签
             if any(current_media_path in pair for pair in self.live_pics_paths):
                 selected_labels.append("Live")  # 添加"Live"标签
+
+            # 检查当前照片是否为苹果编辑的照片，如果是，则自动添加"Apple Edited"标签
+            if any(current_media_path == edited for edited, _ in self.apple_edited_pairs):
+                selected_labels.append("编辑过")
 
             # 仅当有选中的标签时，才保存当前图片的分类
             if selected_labels:  # 检查selected_labels非空
