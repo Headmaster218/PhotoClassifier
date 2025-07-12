@@ -22,7 +22,9 @@ class PhotoClassifier:
         self.classifications = self.load_classifications()
         self.media_paths = find_medias(media_path)
         self.live_pics_paths = self.find_live_photos(self.media_paths)
-        self.apple_edited_pairs = self.find_apple_edited_pairs(self.media_paths)
+        self.apple_edited_pic_paths = []
+        self.apple_original_pic_paths = self.find_apple_edited_origins(self.media_paths)
+        
 
 
         self.after_id = None
@@ -124,39 +126,29 @@ class PhotoClassifier:
         return live_photos
     
 
-    def find_apple_edited_pairs(self, media_paths):
+    def find_apple_edited_origins(self, media_paths):
         """
-        查找所有符合苹果编辑命名规则的 (编辑文件, 原始文件) 对。
-        规则：编辑文件名在首个数字前插入一个 'E'，扩展名不变。
-        
-        参数：
-            media_paths: List[str]，文件路径列表
-        
-        返回：
-            List[Tuple[str, str]]：格式为 (编辑文件路径, 原始文件路径)
+        查找所有有苹果风格编辑版本的原图路径。
+        规则：编辑图名在首个数字前插入 'E'，扩展名相同。
+        返回：原图路径列表（每个原图都有对应的编辑版本）
         """
-        pairs = []
-        
-        # 预处理成小写查找表：filename_lower → full_path
-        name_lookup = {os.path.basename(p).lower(): p for p in media_paths}
+
+        filename_to_path = {os.path.basename(p): p for p in media_paths}
+        origins = set()
 
         for path in media_paths:
             fname = os.path.basename(path)
             name, ext = os.path.splitext(fname)
 
-            # 匹配格式：前缀 + E + 数字部分
+            # 匹配编辑图命名（如 IMG_E1234.JPG、ABCDE9999.HEIC）
             match = re.match(r'^(.+?)E(\d.*)$', name)
             if match:
-                # 构造原始文件名（把E去掉，保留扩展名）
-                original_name = match.group(1) + match.group(2) + ext
-                original_name_lc = original_name.lower()
+                orig_name = match.group(1) + match.group(2) + ext
+                if orig_name in filename_to_path:
+                    origins.add(filename_to_path[orig_name])
+                    self.apple_edited_pic_paths.append(path)  # 添加编辑图路径到列表
 
-                if original_name_lc in name_lookup:
-                    pairs.append((path, name_lookup[original_name_lc]))
-
-        return pairs
-
-
+        return list(origins)
 
 
     def save_path(self, new_path):
@@ -247,8 +239,8 @@ class PhotoClassifier:
                 selected_labels.append("Live")  # 添加"Live"标签
 
             # 检查当前照片是否为苹果编辑的照片，如果是，则自动添加"Apple Edited"标签
-            if any(current_media_path == edited for edited, _ in self.apple_edited_pairs):
-                selected_labels.append("编辑过")
+            if any(current_media_path == path for path in self.apple_original_pic_paths):
+                selected_labels.append("已编辑")
 
             # 仅当有选中的标签时，才保存当前图片的分类
             if selected_labels:  # 检查selected_labels非空
@@ -275,6 +267,10 @@ class PhotoClassifier:
             # 如果是Live照片的视频部分，则跳过
             if any(next_media_path == mov_path for _, mov_path in self.live_pics_paths):
                 continue  # 跳过这个MOV文件
+
+            # 如果是苹果编辑的照片，则跳过
+            if next_media_path in self.apple_edited_pic_paths:
+                continue
 
             # 检查下一张图片是否未分类或空分类
             if next_media_path not in self.classifications or not self.classifications[next_media_path]:
@@ -341,51 +337,71 @@ class PhotoClassifier:
 
     def update_frame(self, frame_skip, new_w, new_h):
         if self.cap and self.cap.isOpened():
+            # 跳过指定数量的帧，避免频繁 seek 导致卡顿
+            for _ in range(frame_skip):
+                self.cap.read()
 
-            start_time = time.time()  # 获取开始时间
-
-            total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))  # 获取视频总帧数
-            current_frame_number = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))  # 获取当前帧号
-            new_frame_number = current_frame_number + frame_skip  # 计算新的帧号
-
-            # 检查计算得出的新帧号是否超出视频总帧数
-            if new_frame_number >= total_frames:
-                # 如果超出，重置到视频的开始
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            else:
-                # 否则，设置到计算得出的新帧号
-                self.cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame_number)
-
-            ret, frame = self.cap.read()  # 尝试读取下一帧
-            if not ret:  # 检查是否成功读取到帧
-                self.stop_playing()  # 如果没有帧可读，则停止播放
+            ret, frame = self.cap.read()
+            if not ret:
+                self.stop_playing()
                 self.master.after(100, lambda: self.display_video(self.media_paths[self.current_media_index]))
                 return
 
-            # resized_frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
-            # img = Image.fromarray(cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB))
-            # photo_image = ImageTk.PhotoImage(image=img)
-            # self.media_label.configure(image=photo_image)
-            # self.media_label.image = photo_image  # 避免垃圾回收
-
+            # 转换颜色并缩放
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
             img = Image.fromarray(frame)
-            img.thumbnail((new_w, new_h))
             photo_image = ImageTk.PhotoImage(img)
-            self.media_label.configure(image=photo_image)
-            self.media_label.image = photo_image  # 避免垃圾回收
 
-            end_time = time.time()  # 获取结束时间
-            
-            time2delay = max(((1/self.cap.get(cv2.CAP_PROP_FPS))*(frame_skip+1)-(end_time-start_time))*300,20)
-            # print(str({end_time-start_time})+ str({time2delay}))
-            # if time2delay < 6:
-            #     frame_skip = 0
-            # 设置定时器以继续读取下一帧
-            # self.master.focus_set()  # 将焦点设置到主窗口   
-            self.after_id = self.master.after(int(time2delay), lambda: self.update_frame(frame_skip,new_w,new_h))  #无法添加新标签，键盘快捷键失效。
+            self.media_label.configure(image=photo_image)
+            self.media_label.image = photo_image  # 避免被垃圾回收
+
+            # 简洁稳定的延时策略，确保不卡顿也不频繁
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            delay = max(int(1000 / fps * (frame_skip + 1)), 30)
+            self.after_id = self.master.after(delay, lambda: self.update_frame(frame_skip, new_w, new_h))
         else:
             self.display_video(self.media_paths[self.current_media_index])
+
+
+
+    # def update_frame(self, frame_skip, new_w, new_h):
+    #     if self.cap and self.cap.isOpened():
+
+    #         start_time = time.time()  # 获取开始时间
+
+    #         total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))  # 获取视频总帧数
+    #         current_frame_number = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))  # 获取当前帧号
+    #         new_frame_number = current_frame_number + frame_skip  # 计算新的帧号
+
+    #         # 检查计算得出的新帧号是否超出视频总帧数
+    #         if new_frame_number >= total_frames:
+    #             # 如果超出，重置到视频的开始
+    #             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    #         else:
+    #             # 否则，设置到计算得出的新帧号
+    #             self.cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame_number)
+
+    #         ret, frame = self.cap.read()  # 尝试读取下一帧
+    #         if not ret:  # 检查是否成功读取到帧
+    #             self.stop_playing()  # 如果没有帧可读，则停止播放
+    #             self.master.after(100, lambda: self.display_video(self.media_paths[self.current_media_index]))
+    #             return
+
+    #         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    #         img = Image.fromarray(frame)
+    #         img.thumbnail((new_w, new_h))
+    #         photo_image = ImageTk.PhotoImage(img)
+    #         self.media_label.configure(image=photo_image)
+    #         self.media_label.image = photo_image  # 避免垃圾回收
+
+    #         end_time = time.time()  # 获取结束时间
+            
+    #         time2delay = max(((1/self.cap.get(cv2.CAP_PROP_FPS))*(frame_skip+1)-(end_time-start_time))*300,20)
+
+    #         self.after_id = self.master.after(int(time2delay), lambda: self.update_frame(frame_skip,new_w,new_h))  #无法添加新标签，键盘快捷键失效。
+    #     else:
+    #         self.display_video(self.media_paths[self.current_media_index])
 
     def display_photo(self, image_path):
         # 尝试使用pathlib处理路径，以提高兼容性
