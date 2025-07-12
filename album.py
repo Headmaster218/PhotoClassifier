@@ -6,7 +6,7 @@ import numpy as np
 import cv2
 import json
 from pypinyin import lazy_pinyin  # Import lazy_pinyin for pinyin sorting
-import os
+import os, re  # 用于文件路径处理和正则表达式匹配
 import shutil  # 用于文件复制
 
 class PhotoViewer(tk.Toplevel):
@@ -16,6 +16,8 @@ class PhotoViewer(tk.Toplevel):
         self.all_categories = all_categories
         self.photo_categories = photo_categories
         self.update_callback = update_callback
+
+
 
         self.title(os.path.basename(photo_path))
         self.geometry("1280x790")
@@ -46,6 +48,10 @@ class PhotoViewer(tk.Toplevel):
         # 绑定鼠标事件用于平移
         self.canvas.bind("<ButtonPress-1>", self.start_pan)
         self.canvas.bind("<B1-Motion>", self.pan_image)
+        self.canvas.bind("<ButtonPress-3>", self.show_edited_image)
+        self.canvas.bind("<ButtonRelease-3>", self.restore_original_image)
+
+
 
         self.display_image()
 
@@ -55,6 +61,43 @@ class PhotoViewer(tk.Toplevel):
 
         self.change_category_button = tk.Button(self, text="修改分类", command=self.change_category)
         self.change_category_button.pack()
+
+    def show_edited_image(self, event):
+        fname = os.path.basename(self.photo_path)
+        name, ext = os.path.splitext(fname)
+
+        match = re.match(r'^(.+?)(\d+)$', name)
+        if not match:
+            return  # 当前不是原图命名，不操作
+
+        edited_name = match.group(1) + 'E' + match.group(2) + ext
+        edited_path = os.path.join(os.path.dirname(self.photo_path), edited_name)
+
+        if os.path.exists(edited_path):
+            with open(edited_path, 'rb') as file:
+                img_data = file.read()
+                img_array = np.asarray(bytearray(img_data), dtype=np.uint8)
+                img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+            if img is not None:
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                self.display_temp_image(img)
+
+    def restore_original_image(self, event):
+        self.display_temp_image(self.cv_img)
+
+    def display_temp_image(self, img_array):
+        img_height, img_width = img_array.shape[:2]
+        resized_img = cv2.resize(img_array, (int(img_width * self.scale), int(img_height * self.scale)), interpolation=cv2.INTER_LINEAR)
+        pil_img = Image.fromarray(resized_img)
+        self.photo_image = ImageTk.PhotoImage(image=pil_img)
+
+        self.canvas.delete("all")
+        self.canvas.create_image(self.image_position_x, self.image_position_y, anchor="nw", image=self.photo_image)
+
+
+
+
 
     def calculate_initial_scale(self):
         # 根据窗口大小计算初始缩放比例
@@ -308,15 +351,15 @@ class ClassifiedPhotoAlbum:
                         draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
                         # 在半透明矩形上绘制文本
                         draw.text((10, 10), text, fill=(255,0,0,255), font=font)
-                    if "编辑过" in photo_tags:
+                    if "已编辑" in photo_tags:
                         draw = ImageDraw.Draw(img, "RGBA")
                         font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
                         text = "Edited"
                         _,_,textwidth, textheight = font.getbbox(text)
                         # 在图片上绘制半透明矩形作为文本背景
-                        draw.rectangle([(self.target_thumb_size[0] - textwidth - 20, 5), (self.target_thumb_size[0] - 5, 5 + textheight + 10)], fill=(255,255,255,128))
+                        draw.rectangle([(70, 5), (70 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
                         # 在半透明矩形上绘制文本
-                        draw.text((self.target_thumb_size[0] - textwidth - 10, 10), text, fill=(0,255,0,255), font=font)
+                        draw.text((75, 10), text, fill=(0,255,0,255), font=font)
                     photo_image = ImageTk.PhotoImage(img)
                     self.photo_images.append(photo_image)
                 except (FileNotFoundError, UnidentifiedImageError):
