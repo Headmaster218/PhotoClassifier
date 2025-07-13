@@ -17,10 +17,12 @@ class PhotoViewer(tk.Toplevel):
         self.photo_categories = photo_categories
         self.update_callback = update_callback
 
-
-
         self.title(os.path.basename(photo_path))
-        self.geometry("1280x790")
+        self.screen_width = master.winfo_screenwidth()
+        self.screen_height = master.winfo_screenheight()
+        self.pic_target_w = self.screen_width * 0.6  # Adjusted width to 60% of screen width
+        self.pic_target_h = self.screen_height * 0.85  # Adjusted height to 85% of screen height
+        self.geometry(f"{int(self.pic_target_w)}x{int(self.pic_target_h)+100}")  # Dynamically set window size
 
         # 使用open以二进制方式读取图片数据
         with open(photo_path, 'rb') as file:
@@ -37,10 +39,10 @@ class PhotoViewer(tk.Toplevel):
         # 初始化图像缩放比例和位置
         self.scale = 1.0
         self.calculate_initial_scale()
-        self.image_position_x = (1280 - self.img_width * self.scale) / 2
-        self.image_position_y = (720 - self.img_height * self.scale) / 2
+        self.image_position_x = (self.pic_target_w - self.img_width * self.scale) / 2
+        self.image_position_y = (self.pic_target_h - self.img_height * self.scale) / 2
 
-        self.canvas = tk.Canvas(self, width=1280, height=720, bg='black')
+        self.canvas = tk.Canvas(self, width=self.pic_target_w, height=self.pic_target_h, bg='black')
         self.canvas.pack()
 
         # 绑定滚轮事件用于缩放
@@ -101,8 +103,8 @@ class PhotoViewer(tk.Toplevel):
 
     def calculate_initial_scale(self):
         # 根据窗口大小计算初始缩放比例
-        scale_x = 1280 / self.img_width
-        scale_y = 720 / self.img_height
+        scale_x = self.pic_target_w / self.img_width
+        scale_y = self.pic_target_h / self.img_height
         self.scale = min(scale_x, scale_y)
 
     def zoom_image(self, event):
@@ -385,7 +387,7 @@ class ClassifiedPhotoAlbum:
                 draw = ImageDraw.Draw(img)
                 font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
                 text = "Video"
-                textwidth, textheight = draw.textsize(text, font=font)
+                textwidth, textheight = draw.textbbox((0, 0), text, font=font)[2:4]  # 获取文本宽高
                 # 在图片上绘制半透明矩形作为文本背景
                 draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
                 # 在半透明矩形上绘制文本
