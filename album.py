@@ -1,7 +1,9 @@
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox, filedialog
-from PIL import Image, ImageTk, UnidentifiedImageError, ImageDraw, ImageFont
+from PIL import Image, ImageTk, UnidentifiedImageError, ImageDraw, ImageFont, ImageSequence
+import pillow_heif  # 加载 pillow-heif 插件
 import numpy as np
 import cv2
 import json
@@ -96,10 +98,6 @@ class PhotoViewer(tk.Toplevel):
 
         self.canvas.delete("all")
         self.canvas.create_image(self.image_position_x, self.image_position_y, anchor="nw", image=self.photo_image)
-
-
-
-
 
     def calculate_initial_scale(self):
         # 根据窗口大小计算初始缩放比例
@@ -338,37 +336,72 @@ class ClassifiedPhotoAlbum:
             row = index // self.columns
             column = index % self.columns
             file_extension = os.path.splitext(photo_path)[1].lower()
+            photo_tags = self.photos.get(photo_path, [])
 
-            if file_extension in ['.jpg', '.jpeg', '.png']:  # 图片文件
+
+            if file_extension in ['.jpg', '.jpeg', '.png', '.heic']:  # 增加 HEIC 支持
                 try:
-                    img = Image.open(photo_path)
+                    if file_extension == '.heic':
+                        heif_file = pillow_heif.read_heif(photo_path)
+                        img = Image.frombytes(
+                            heif_file.mode,
+                            heif_file.size,
+                            heif_file.data
+                        )
+                    else:
+                        img = Image.open(photo_path)
+
                     img.thumbnail(self.target_thumb_size)
-                    photo_tags = self.photos.get(photo_path, [])
+
+                    # 处理标签
+                    
+                    draw = ImageDraw.Draw(img, "RGBA")
+
                     if "Live" in photo_tags:
-                        draw = ImageDraw.Draw(img, "RGBA")
-                        font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
+                        font = ImageFont.truetype("arial.ttf", 20)
                         text = "Live"
-                        _,_,textwidth, textheight = font.getbbox(text)
-                        # 在图片上绘制半透明矩形作为文本背景
-                        draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
-                        # 在半透明矩形上绘制文本
-                        draw.text((10, 10), text, fill=(255,0,0,255), font=font)
+                        _, _, textwidth, textheight = font.getbbox(text)
+                        draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255, 255, 255, 128))
+                        draw.text((10, 10), text, fill=(255, 0, 0, 255), font=font)
+
                     if "已编辑" in photo_tags:
-                        draw = ImageDraw.Draw(img, "RGBA")
-                        font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
+                        font = ImageFont.truetype("arial.ttf", 20)
                         text = "Edited"
-                        _,_,textwidth, textheight = font.getbbox(text)
-                        # 在图片上绘制半透明矩形作为文本背景
-                        draw.rectangle([(70, 5), (70 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
-                        # 在半透明矩形上绘制文本
-                        draw.text((75, 10), text, fill=(0,255,0,255), font=font)
+                        _, _, textwidth, textheight = font.getbbox(text)
+                        draw.rectangle([(70, 5), (70 + textwidth + 10, 5 + textheight + 10)], fill=(255, 255, 255, 128))
+                        draw.text((75, 10), text, fill=(0, 255, 0, 255), font=font)
+
                     photo_image = ImageTk.PhotoImage(img)
                     self.photo_images.append(photo_image)
-                except (FileNotFoundError, UnidentifiedImageError):
+
+                except (FileNotFoundError, UnidentifiedImageError) as e:
                     img = Image.new('RGB', self.target_thumb_size, color='gray')
                     photo_image = ImageTk.PhotoImage(img)
                     self.photo_images.append(photo_image)
-                    print(f"Error loading image: {photo_path}")
+                    print(f"❌ Error loading image: {photo_path} | {e}")
+
+            elif file_extension == '.gif':
+                try:
+                    img = Image.open(photo_path)
+                    img.seek(0)  # 确保定位到第一帧
+                    img = img.convert("RGB")  # 转换为 RGB 模式（避免 palette）
+                    img.thumbnail(self.target_thumb_size)
+
+                except Exception as e:
+                    print(f"GIF 加载失败: {e}")
+                    img = Image.new('RGB', self.target_thumb_size, color='black')
+                    draw = ImageDraw.Draw(img)
+                    draw.text((10, 10), "Error loading gif", fill="white")
+
+                draw = ImageDraw.Draw(img)
+                font = ImageFont.truetype("arial.ttf", 20)
+                text = "GIF"
+                textwidth, textheight = draw.textbbox((0, 0), text, font=font)[2:4]
+                draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
+                draw.text((10, 10), text, fill=(0,255,255,255), font=font)
+                photo_image = ImageTk.PhotoImage(img)
+                self.photo_images.append(photo_image)
+
 
             elif file_extension in ['.mp4', '.mov']:  # 视频文件
                 cap = cv2.VideoCapture(photo_path)
@@ -398,7 +431,7 @@ class ClassifiedPhotoAlbum:
             button = tk.Button(self.photos_frame, image=photo_image, command=lambda p=photo_path: self.open_photo_viewer(p))
             button.grid(row=row, column=column, padx=5, pady=5)
 
-            if "Live" in photo_tags:
+            if "Live" in photo_tags or file_extension in ['.mp4', '.mov', '.gif']:
                 button.bind("<Enter>", lambda event, path=photo_path: self.start_live_video(event, path))
                 button.bind("<Leave>", lambda event: self.stop_live_video())
 
@@ -416,7 +449,7 @@ class ClassifiedPhotoAlbum:
         if extension.lower() in ['.jpg', '.jpeg', '.png']:
             # 如果是图片文件，查找对应的MOV视频文件
             video_path = f"{base}.MOV"
-        elif extension.lower() in ['.mp4', '.mov']:
+        elif extension.lower() in ['.mp4', '.mov', '.gif']:
             # 如果直接是MP4视频文件
             video_path = file_path
         else:
@@ -438,7 +471,8 @@ class ClassifiedPhotoAlbum:
         if self.currently_playing_widget:
             self.stop_video_flag.set()  # 设置停止标志以停止视频播放
             # 等待视频播放线程结束，或者设置一定超时时间
-            self.stop_video_flag.wait(timeout=0.2)  # 假设等待线程结束或超时
+            if hasattr(self, 'video_thread') and self.video_thread.is_alive():
+                self.video_thread.join(timeout=0.1)  # 等最多 0.5s 让其退出
             # 恢复原始图片
             original_image = self.currently_playing_widget.cget("image")
             self.currently_playing_widget.config(image=original_image)
@@ -446,28 +480,61 @@ class ClassifiedPhotoAlbum:
             self.currently_playing_widget = None
 
     def play_video(self, video_path, widget):
-        # 保存原始图片引用
-        original_image = widget.cget("image")
-        cap = cv2.VideoCapture(video_path)
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        wait_time = max(1, int(800 / fps))
-        while not self.stop_video_flag.is_set():
-            ret, frame = cap.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                img = Image.fromarray(frame)
-                img.thumbnail(self.target_thumb_size)
-                photo_image = ImageTk.PhotoImage(img)
-                widget.config(image=photo_image)
-                widget.image = photo_image
-                cv2.waitKey(wait_time)
+
+            original_image = widget.cget("image")
+            ext = os.path.splitext(video_path)[1].lower()
+
+            if ext == ".gif":
+                try:
+                    gif = Image.open(video_path)
+                    frames = []
+                    durations = []
+
+                    # 预取所有帧
+                    for frame in ImageSequence.Iterator(gif):
+                        frames.append(frame.convert("RGB"))
+                        durations.append(frame.info.get('duration', 100))  # 毫秒
+
+                    idx = 0
+                    while not self.stop_video_flag.is_set():
+                        frame = frames[idx % len(frames)]
+                        frame.thumbnail(self.target_thumb_size)
+                        photo_image = ImageTk.PhotoImage(frame)
+                        widget.config(image=photo_image)
+                        widget.image = photo_image
+                        time.sleep(durations[idx % len(durations)] / 800.0)
+                        idx += 1
+
+                except Exception as e:
+                    print(f"播放 GIF 时出错: {e}")
+
             else:
-                break
-        cap.release()
-        # 当停止播放时，恢复原始图片
-        self.stop_video_flag.set()
-        widget.config(image=original_image)
-        widget.image = original_image
+                # 普通视频处理
+                cap = cv2.VideoCapture(video_path)
+                if not cap.isOpened():
+                    print(f"❌ 无法打开视频：{video_path}")
+                    return
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                wait_time = max(1, int(800 / (fps if fps > 0 else 25)))
+
+                while not self.stop_video_flag.is_set():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    img = Image.fromarray(frame)
+                    img.thumbnail(self.target_thumb_size)
+                    photo_image = ImageTk.PhotoImage(img)
+                    widget.config(image=photo_image)
+                    widget.image = photo_image
+                    time.sleep(wait_time / 800.0)
+
+                cap.release()
+
+            # 播放结束，恢复静态图
+            widget.config(image=original_image)
+            widget.image = original_image
+            self.stop_video_flag.set()
 
     def open_photo_viewer(self, photo_path):
         PhotoViewer(self.master, photo_path, self.all_categories, self.photos.get(photo_path, []), self.update_photo_classification)
