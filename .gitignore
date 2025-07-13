@@ -11,3 +11,7 @@ sorter.spec
 __pycache__/
 
 *.pkl
+
+.Thumb/
+
+exiftool_files/

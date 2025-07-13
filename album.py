@@ -1,10 +1,11 @@
+import datetime
 import queue
 import subprocess
 import threading
 import time
 import tkinter as tk
 from tkinter import PhotoImage, ttk, simpledialog, messagebox, filedialog
-from PIL import Image, ImageTk, UnidentifiedImageError, ImageDraw, ImageFont, ImageSequence
+from PIL import Image, ImageTk, UnidentifiedImageError, ImageDraw, ImageFont, ImageSequence, ExifTags
 import pillow_heif  # 加载 pillow-heif 插件
 import numpy as np
 import cv2
@@ -13,6 +14,10 @@ from pypinyin import lazy_pinyin  # Import lazy_pinyin for pinyin sorting
 import os, re  # 用于文件路径处理和正则表达式匹配
 import shutil  # 用于文件复制
 from pathlib import Path
+from exiftool import ExifTool
+from typing import List as list
+
+pillow_heif.register_heif_opener()
 
 class PhotoViewer(tk.Toplevel):
     def __init__(self, master, photo_path, all_categories, photo_categories, update_callback):
@@ -102,7 +107,7 @@ class PhotoViewer(tk.Toplevel):
             messagebox.showerror("错误", f"调用系统播放器失败：{e}")
 
     def show_edited_image(self, event):
-        fname = os.path.basename(self.photo_path)
+        fname = os.path.basename(self.original_path)
         name, ext = os.path.splitext(fname)
 
         match = re.match(r'^(.+?)(\d+)$', name)
@@ -110,17 +115,29 @@ class PhotoViewer(tk.Toplevel):
             return  # 当前不是原图命名，不操作
 
         edited_name = match.group(1) + 'E' + match.group(2) + ext
-        edited_path = os.path.join(os.path.dirname(self.photo_path), edited_name)
+        edited_path = os.path.join(os.path.dirname(self.original_path), edited_name)
 
         if os.path.exists(edited_path):
-            with open(edited_path, 'rb') as file:
-                img_data = file.read()
-                img_array = np.asarray(bytearray(img_data), dtype=np.uint8)
-                img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            ext = os.path.splitext(edited_path)[1].lower()
 
-            if img is not None:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                self.display_temp_image(img)
+            try:
+                if ext == '.heic':
+                    heif_file = pillow_heif.read_heif(edited_path)
+                    img_pil = Image.frombytes(heif_file.mode, heif_file.size, heif_file.data)
+                    img = np.array(img_pil)[..., ::-1]  # RGB → BGR for OpenCV compatibility
+                else:
+                    with open(edited_path, 'rb') as file:
+                        img_data = file.read()
+                        img_array = np.asarray(bytearray(img_data), dtype=np.uint8)
+                        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+                if img is not None:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    self.display_temp_image(img)
+                else:
+                    print(f"❌ 解码失败：{edited_path}")
+            except Exception as e:
+                print(f"❌ 加载编辑图像失败: {edited_path} | 错误: {e}")
 
     def restore_original_image(self, event):
         self.display_temp_image(self.cv_img)
@@ -324,6 +341,36 @@ class ClassifiedPhotoAlbum:
                 if not dst.exists():
                     self.thumb_task_queue.put((p, dst))
 
+    def get_time_from_metadata(self, meta: dict) -> datetime.datetime:
+        for key in ['DateTimeOriginal', 'CreateDate', 'MediaCreateDate', 'ModifyDate']:
+            time_str = meta.get(key)
+            if time_str:
+                try:
+                    return datetime.datetime.strptime(time_str, "%Y:%m:%d %H:%M:%S")
+                except Exception:
+                    pass
+        return datetime.datetime.fromtimestamp(os.path.getmtime(meta.get("SourceFile")))
+
+    def get_sorted_photos_by_time(self, paths: list[str]) -> list[str]:
+        """主函数：批量提取时间并排序返回路径列表"""
+        try:
+            with ExifTool() as et:
+                metadata_list = et.get_metadata(paths)
+
+            # 构造 (path, time) 元组列表
+            path_time_pairs = []
+            for meta in metadata_list:
+                path = meta.get("SourceFile")
+                if path:
+                    dt = self.get_time_from_metadata(meta)
+                    path_time_pairs.append((path, dt))
+
+            # 排序并返回 path 列表
+            return [p for p, _ in sorted(path_time_pairs, key=lambda x: x[1])]
+
+        except Exception as e:
+            print("[ExifTool 批量读取失败]", e)
+            return sorted(paths)  # fallback：按路径名排序
 
     def category_selected(self, event=None):
         filter_type = self.filter_type_combobox.get()
@@ -342,8 +389,10 @@ class ClassifiedPhotoAlbum:
         elif filter_type == "只有前面没有后面":
             self.current_category_photos = [photo for photo, labels in self.photos.items() if category1 in labels and category2 not in labels]
 
-        self.current_page = 0
-        self.display_photos()
+        with ExifTool() as self.et:
+            self.current_category_photos = self.get_sorted_photos_by_time(self.current_category_photos)
+            self.current_page = 0
+            self.display_photos()
 
     def update_comboboxes(self):
         all_categories = ["无"] + self.get_all_categories()
@@ -431,8 +480,26 @@ class ClassifiedPhotoAlbum:
             if thumb_path.exists():
                 try:
                     img = Image.open(thumb_path)
-                    img = img.resize(self.target_thumb_size, Image.ANTIALIAS)
+
+                    # 原始尺寸
+                    original_width, original_height = img.size
+
+                    # 目标尺寸
+                    target_width, target_height = self.target_thumb_size
+
+                    # 计算缩放比例，取宽高方向的最小缩放因子
+                    scale = min(target_width / original_width, target_height / original_height, 3.0)
+
+                    # 新尺寸（确保整数）
+                    new_width = int(original_width * scale)
+                    new_height = int(original_height * scale)
+
+                    # 执行等比例缩放
+                    img = img.resize((new_width, new_height), Image.LANCZOS)
+
+                    # 准备绘图
                     draw = ImageDraw.Draw(img, "RGBA")
+
 
                     if file_extension in ['.mp4', '.mov']:  # 视频文件
                         font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
@@ -442,6 +509,13 @@ class ClassifiedPhotoAlbum:
                         draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
                         # 在半透明矩形上绘制文本
                         draw.text((10, 10), text, fill=(0,255,0,255), font=font)
+
+                    elif file_extension == '.gif':
+                        font = ImageFont.truetype("arial.ttf", 20)
+                        text = "GIF"
+                        textwidth, textheight = draw.textbbox((0, 0), text, font=font)[2:4]
+                        draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
+                        draw.text((10, 10), text, fill=(0,255,255,255), font=font)
 
 
                     if "Live" in photo_tags:
@@ -562,9 +636,6 @@ class ClassifiedPhotoAlbum:
 
         self.update_pagination_info()
 
-
-
-
     def start_live_video(self, event, file_path):
         # 如果有视频正在播放，先停止它
         if self.currently_playing_widget:
@@ -574,7 +645,7 @@ class ClassifiedPhotoAlbum:
 
         # 检查文件类型
         base, extension = os.path.splitext(file_path)
-        if extension.lower() in ['.jpg', '.jpeg', '.png']:
+        if extension.lower() in ['.jpg', '.jpeg', '.png', '.heic']:
             # 如果是图片文件，查找对应的MOV视频文件
             video_path = f"{base}.MOV"
         elif extension.lower() in ['.mp4', '.mov', '.gif']:
@@ -591,9 +662,11 @@ class ClassifiedPhotoAlbum:
 
         # 记录当前播放视频的widget
         self.currently_playing_widget = event.widget
+
         # 使用传入的视频文件路径启动视频播放线程
-        video_thread = threading.Thread(target=self.play_video, args=(video_path, event.widget,))
-        video_thread.start()
+        self.video_thread = threading.Thread(target=self.play_video, args=(video_path, event.widget,))
+        self.video_thread.start()
+
 
     def stop_live_video(self):
         if self.currently_playing_widget:
