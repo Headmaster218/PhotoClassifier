@@ -7,6 +7,7 @@ from tkinter import *
 from PIL import Image, ImageTk
 import json
 import imageio
+import pillow_heif
 import time
 
 def is_video_file(file_path):
@@ -244,7 +245,7 @@ class PhotoClassifier:
             auto_tags = {"Live", "已编辑"}
 
             # 自动标签判断
-            if any(current_media_path in pair for pair in self.live_pics_paths):
+            if any(current_media_path == pic_path for pic_path, _ in self.live_pics_paths):
                 selected_labels.append("Live")
             if any(current_media_path == path for path in self.apple_original_pic_paths):
                 selected_labels.append("已编辑")
@@ -421,27 +422,38 @@ class PhotoClassifier:
             self.display_video(self.media_paths[self.current_media_index])
 
     def display_photo(self, image_path):
-        # 尝试使用pathlib处理路径，以提高兼容性
         image_path = Path(image_path)
-        
-        # 读取图片文件的二进制数据
+        ext = image_path.suffix.lower()
+
         try:
-            img_data = image_path.read_bytes()  # 读取图片数据
-            img_array = np.frombuffer(img_data, np.uint8)  # 将数据转换为numpy数组
-            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)  # 用OpenCV解码图片数据
-            if img is None:
-                raise IOError("无法加载图片"+str(image_path))
+            if ext == ".heic":
+                # 使用 pillow-heif 打开 HEIC 文件
+                heif_file = pillow_heif.read_heif(str(image_path))
+                img_pil = Image.frombytes(
+                    heif_file.mode, 
+                    heif_file.size, 
+                    heif_file.data
+                )
+                img = np.array(img_pil)[..., ::-1]  # RGB → BGR for OpenCV compatibility
+            else:
+                img_data = image_path.read_bytes()
+                img_array = np.frombuffer(img_data, np.uint8)
+                img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                if img is None:
+                    raise IOError("无法加载图片" + str(image_path))
         except Exception as e:
             messagebox.showerror("错误", f"加载图片失败：{e}")
             return
-        w,h = self.calculate_scale(img.shape[0],img.shape[1])
-        # 接下来是图片处理和显示的代码
-        img = cv2.resize(img, (w, h))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # 将BGR转换为RGB
+
+        h, w = img.shape[:2]
+        new_w, new_h = self.calculate_scale(h, w)
+        img = cv2.resize(img, (new_w, new_h))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_pil = Image.fromarray(img)
         img_tk = ImageTk.PhotoImage(image=img_pil)
         self.media_label.imgtk = img_tk
         self.media_label.configure(image=img_tk)
+
 
     def add_new_label(self):
         new_label = self.new_label_entry.get().strip()
