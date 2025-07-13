@@ -17,6 +17,7 @@ class PhotoClassifier:
     def __init__(self, master):
         self.master = master
         media_path = self.load_path()  # 加载路径
+        rename_ext_to_uppercase_no_conflict(media_path)  # 重命名小写扩展名为大写，避免冲突
         self.labels_file = 'jsondata/labels.json'
         self.labels = self.load_labels()
         self.classifications = self.load_classifications()
@@ -57,6 +58,9 @@ class PhotoClassifier:
 
         self.media_label = Label(master)
         self.media_label.pack()
+
+        self.media_path_label = Label(master, text="当前媒体路径：")
+        self.media_path_label.pack()
 
         #标签frame
         self.buttons_frame = Frame(master)
@@ -510,10 +514,64 @@ class PhotoClassifier:
             return []
 
 def find_medias(directory):
-    # supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".jp2"]
-    supported_formats = [".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".jp2", ".mp4", ".avi", ".mov"]  # 添加视频格式
-    media_paths = [os.path.join(dp, f) for dp, dn, filenames in os.walk(directory) for f in filenames if os.path.splitext(f)[1].lower() in supported_formats]
+    supported_formats = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".heic",
+                        ".gif", ".mp4", ".avi", ".mov"}  # 用 set 更快
+
+    media_paths = []
+
+    for root, _, files in os.walk(directory):
+        for file in files:
+            ext = os.path.splitext(file)[1].lower()
+            if ext in supported_formats:
+                full_path = os.path.join(root, file)
+                media_paths.append(os.path.normpath(full_path))
+
     return media_paths
+
+
+def rename_ext_to_uppercase_no_conflict(target_dir):
+    """
+    遍历目标目录及其子目录，将所有拓展名为小写的文件重命名为大写，
+    前提是整个目录树中不会因此产生路径冲突。
+    """
+    if not os.path.isdir(target_dir):
+        print("❌ 无效的目录路径")
+        return
+
+    # 1. 收集所有文件路径（规范化）
+    all_files = set()
+    for root, _, files in os.walk(target_dir):
+        for f in files:
+            full_path = os.path.normpath(os.path.join(root, f))
+            all_files.add(full_path)
+
+    # 2. 生成重命名计划
+    rename_map = {}  # 原路径 -> 新路径
+    new_paths_set = set()
+
+    for old_path in all_files:
+        dir_name, file_name = os.path.split(old_path)
+        name, ext = os.path.splitext(file_name)
+
+        if ext and ext[1:].islower():  # 拓展名为小写
+            new_file_name = name + ext.upper()
+            new_path = os.path.normpath(os.path.join(dir_name, new_file_name))
+
+            # 全局冲突检测
+            if new_path in all_files or new_path in new_paths_set:
+                print(f"⚠️ 冲突：{old_path} → {new_path} 已存在，跳过")
+                continue  # 冲突则跳过
+
+            rename_map[old_path] = new_path
+            new_paths_set.add(new_path)
+
+    # 3. 执行重命名
+    for old_path, new_path in rename_map.items():
+        os.rename(old_path, new_path)
+        print(f"✅ {old_path} → {new_path}")
+
+    print(f"\n🎉 共重命名了 {len(rename_map)} 个文件（不含冲突跳过项）")
+
 
 def main():
     root = Tk()
