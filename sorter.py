@@ -119,7 +119,7 @@ class PhotoClassifier:
 
     def find_live_photos(self, media_paths):
         live_photos = []
-        photo_exts = ['.JPG', '.HEIC']
+        photo_exts = ['.JPG', '.JPEG', '.HEIC']
         
         # 1. 按目录分组文件路径
         folder_files = defaultdict(set)
@@ -444,7 +444,7 @@ class PhotoClassifier:
             self.media_label.image = photo_image  # 避免被垃圾回收
 
             # 简洁稳定的延时策略，确保不卡顿也不频繁
-            fps = self.cap.get(cv2.CAP_PROP_FPS) * 1.5
+            fps = self.cap.get(cv2.CAP_PROP_FPS) * 2
             delay = min(int(1000 / fps * (frame_skip + 1)), 30)
             self.after_id = self.master.after(delay, lambda: self.update_frame(frame_skip, new_w, new_h))
         else:
@@ -453,7 +453,11 @@ class PhotoClassifier:
     def display_photo(self, image_path):
         image_path = Path(image_path)
         ext = image_path.suffix.lower()
-
+        with image_path.open("rb") as f:
+            header = f.read(16)
+    
+        if b'ftypheic' in header or b'ftyphevc' in header:
+            ext =  ".heic"
         try:
             if ext == ".heic":
                 # 使用 pillow-heif 打开 HEIC 文件
