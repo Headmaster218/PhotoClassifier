@@ -21,6 +21,25 @@ with open(json_file_path, 'r', encoding='utf-8') as f:
 
 updated_classifications = {}
 
+def get_edited_version_path(original_path):
+    """
+    给定原图路径，构造苹果风格的编辑图路径，例如：
+    IMG_1234.JPG → IMG_E1234.JPG
+    """
+    dir_path = os.path.dirname(original_path)
+    filename = os.path.basename(original_path)
+    base, ext = os.path.splitext(filename)
+
+    # 插入 E（简单策略：在首个数字前插入 'E'）
+    for i, ch in enumerate(base):
+        if ch.isdigit():
+            new_base = base[:i] + 'E' + base[i:]
+            edited_filename = new_base + ext
+            return os.path.join(dir_path, edited_filename)
+    
+    return None  # 无数字，不生成
+
+
 def print_progress(progress):
     stdout.write("\r进度: {:.2f}%".format(progress))
     stdout.flush()
@@ -33,55 +52,67 @@ def move_and_update(original_path, tags, total_files, current_file):
     normalized_path = original_path.replace('/', os.path.sep)
     filename = os.path.basename(normalized_path)
     base, extension = os.path.splitext(filename)
-    new_path = os.path.join(target_folder, filename)
+    new_path = os.path.normpath(os.path.join(target_folder, filename))
 
-    # 检查文件是否已经在目标文件夹中
+    # 检查文件是否已在目标路径
     if os.path.abspath(normalized_path).lower() == os.path.abspath(new_path).lower():
         print(f"\n文件已在目标文件夹中，跳过：{normalized_path}")
-        updated_classifications[original_path] = tags  # 保持原始路径不变
+        updated_classifications[original_path] = tags
         return
 
     try:
-        # 确保源文件存在
         if not os.path.exists(normalized_path):
             print(f"\n找不到源文件：{normalized_path}")
             return
 
-        # 检查目标文件夹中是否存在同名文件，如果存在且内容不一致，则重命名新文件
-        if os.path.exists(new_path):
-            if not filecmp.cmp(normalized_path, new_path, shallow=False):
-                new_filename = f"{base}_new{extension}"
-                new_path = os.path.join(target_folder, new_filename)
-                print(f"\n文件冲突，重命名并移动：{original_path} -> {new_path}")
+        # 构造扩展资源路径（可选）
+        related_paths = [(normalized_path, new_path)]  # 主图
+
+        if "Live" in tags:
+            mov_orig = normalized_path.replace(extension, '.MOV')
+            mov_target = new_path.replace(extension, '.MOV')
+            if os.path.exists(mov_orig):
+                related_paths.append((mov_orig, mov_target))
+
+        if "已编辑" in tags:
+            edited_orig = get_edited_version_path(normalized_path)
+            if edited_orig and os.path.exists(edited_orig):
+                edited_target = os.path.join(target_folder, os.path.basename(edited_orig))
+                related_paths.append((edited_orig, edited_target))
+
+        # 检查是否有任何目标路径冲突（重命名后缀 _n）
+        conflict = any(os.path.exists(t) for _, t in related_paths)
+        if conflict:
+            related_paths_new = []
+            for src, tgt in related_paths:
+                b, e = os.path.splitext(os.path.basename(tgt))
+                renamed = os.path.join(target_folder, f"{b}_n{e}")
+                related_paths_new.append((src, renamed))
+            related_paths = related_paths_new
+            print(f"\n存在文件名冲突，统一重命名为 _n：\n{[t for _, t in related_paths]}")
+
+        # 执行移动
+        for src, tgt in related_paths:
+            if os.path.exists(src):
+                shutil.move(src, tgt)
+                print(f"✅ 已移动：{src} → {tgt}")
             else:
-                # 如果内容一致，删除源文件
-                os.remove(normalized_path)
-                print(f"\n源文件与目标文件内容一致，已删除源文件：{normalized_path}")
-                updated_classifications[new_path.replace('\\', '/')] = tags
-                return
+                print(f"⚠️ 未找到源文件：{src}")
 
-        shutil.move(normalized_path, new_path)
-        print(f"\n成功移动文件：{original_path} -> {new_path}")
+        # 只更新主图的新路径到 JSON
+        if os.path.exists(related_paths[0][1]):  # related_paths[0] 是主图
+            new_main_path = related_paths[0][1].replace('\\', '/')
+            updated_classifications[new_main_path] = tags
 
-        # 检查并移动对应的.MOV文件（若存在）
-        mov_path = normalized_path.replace(extension, '.MOV')
-        if os.path.exists(mov_path):
-            mov_new_path = new_path.replace(extension, '.MOV')
-            if not os.path.exists(mov_new_path):
-                shutil.move(mov_path, mov_new_path)
-                print(f"\n同时移动了.MOV文件：{mov_path} -> {mov_new_path}")
-            else:
-                print(f"\n目标路径已存在MOV文件，操作取消：{mov_new_path}")
-            if "Live" not in tags:
-                tags.append("Live")
+        # 删除旧主图路径
+        if original_path in updated_classifications:
+            del updated_classifications[original_path]
 
-        # 成功移动后更新JSON
-        updated_classifications[new_path.replace('\\', '/')] = tags
 
     except Exception as e:
         print(f"\n处理文件 {original_path} 时发生错误：{e}")
 
-    # 打印进度
+    # 进度打印
     progress = (current_file / total_files) * 100
     print_progress(progress)
 
