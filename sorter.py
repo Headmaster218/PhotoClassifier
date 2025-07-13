@@ -117,7 +117,7 @@ class PhotoClassifier:
                              "- 会在当前目录创建jsondata文件夹以存储数据\n"
                              "- 请不要移动照片的位置和改名以确保数据准确。\n")
 
-    def find_live_photos(media_paths):
+    def find_live_photos(self, media_paths):
         live_photos = []
         photo_exts = ['.JPG', '.HEIC']
         
@@ -142,7 +142,6 @@ class PhotoClassifier:
                             break  # 找到一个配对就不再尝试其他扩展名
 
         return live_photos
-
 
     def find_apple_edited_origins(self, media_paths):
         """
@@ -262,9 +261,9 @@ class PhotoClassifier:
             auto_tags = {"Live", "已编辑"}
 
             # 自动标签判断
-            if any(current_media_path == pic_path for pic_path, _ in self.live_pics_paths):
+            if "Live" not in selected_labels and any(current_media_path == pic_path for pic_path, _ in self.live_pics_paths):
                 selected_labels.append("Live")
-            if any(current_media_path == path for path in self.apple_original_pic_paths):
+            if "已编辑" not in selected_labels and any(current_media_path == path for path in self.apple_original_pic_paths):
                 selected_labels.append("已编辑")
 
             # 判断是否包含非自动标签
@@ -300,9 +299,17 @@ class PhotoClassifier:
             # 如果是苹果编辑的照片，则跳过
             if next_media_path in self.apple_edited_pic_paths:
                 continue
+            Next_pic_selected_labels = self.classifications.get(next_media_path, [])
+            # 自动标签判断
+            if "Live" not in Next_pic_selected_labels and any(next_media_path == pic_path for pic_path, _ in self.live_pics_paths):
+                Next_pic_selected_labels.append("Live")
+            if "已编辑" not in Next_pic_selected_labels and any(next_media_path == path for path in self.apple_original_pic_paths):
+                Next_pic_selected_labels.append("已编辑")
+            self.classifications[next_media_path] = Next_pic_selected_labels
 
+            non_auto_labels = [label for label in Next_pic_selected_labels if label not in auto_tags]
             # 检查下一张图片是否未分类或空分类
-            if next_media_path not in self.classifications or not self.classifications[next_media_path]:
+            if next_media_path not in self.classifications or not self.classifications[next_media_path] or non_auto_labels == []:
                 self.show_media()
                 break
 
@@ -315,6 +322,7 @@ class PhotoClassifier:
         self.stop_playing()
         for _, btn_var in self.label_buttons:
             btn_var.set(False)
+        self.update_label_buttons()  # 更新标签按钮的选中状态
         media_path = self.media_paths[self.current_media_index]
         self.media_path_label.config(text=f"当前媒体路径：{media_path}")  # 更新媒体路径标签
         self.display_media(media_path)
@@ -322,6 +330,11 @@ class PhotoClassifier:
 
     def show_prev_media(self, event = None):
         if self.current_media_index > 0:  # 确保有上一张图片可以显示
+            if self.media_paths[self.current_media_index-1].endswith('.MOV'):
+                if any(self.media_paths[self.current_media_index-1] == mov_path for _, mov_path in self.live_pics_paths):
+                    self.current_media_index -= 1
+                elif self.media_paths[self.current_media_index-1] in self.apple_edited_pic_paths:
+                    self.current_media_index -= 1
             self.current_media_index -= 1
             self.show_media()
             self.update_label_buttons()  # 更新标签按钮的选中状态
@@ -431,9 +444,8 @@ class PhotoClassifier:
             self.media_label.image = photo_image  # 避免被垃圾回收
 
             # 简洁稳定的延时策略，确保不卡顿也不频繁
-            fps = self.cap.get(cv2.CAP_PROP_FPS)
-            delay = max(int(1000 / fps * (frame_skip + 1)), 30)
-            delay = 15
+            fps = self.cap.get(cv2.CAP_PROP_FPS) * 1.5
+            delay = min(int(1000 / fps * (frame_skip + 1)), 30)
             self.after_id = self.master.after(delay, lambda: self.update_frame(frame_skip, new_w, new_h))
         else:
             self.display_video(self.media_paths[self.current_media_index])
