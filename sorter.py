@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 from tkinter import filedialog, messagebox, ttk, Frame
 import cv2
 import os, re
@@ -412,6 +413,15 @@ class PhotoClassifier:
             h, w = frame.shape[:2]
         new_w,new_h=self.calculate_scale(h,w)
         self.update_frame(frame_skip, new_w,new_h)
+
+    def display_video(self, file_path):
+        # 使用系统默认播放器播放视频
+        try:
+            subprocess.Popen(['start', '', str(file_path)], shell=True)
+        except Exception as e:
+            messagebox.showerror("错误", f"调用系统播放器失败：{e}")
+
+        self.display_photo('./playing.png')  # 显示一个占位图像，表示正在播放视频
 
     def calculate_scale(self,h,w):
             target_width = self.pic_target_w
