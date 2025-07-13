@@ -6,12 +6,18 @@ import numpy as np
 from tkinter import *
 from PIL import Image, ImageTk
 import json
+import imageio
 import time
 
 def is_video_file(file_path):
     video_extensions = ['.mp4', '.avi', '.mov']  # 视频文件扩展名列表
     lower_file_path = file_path.lower()  # 将文件路径转换为小写进行检查
     return any(lower_file_path.endswith(ext) for ext in video_extensions)
+
+def is_gif_file(file_path):
+    gif_extensions = ['.gif']  # GIF文件扩展名列表
+    lower_file_path = file_path.lower()  # 将文件路径转换为小写进行检查
+    return any(lower_file_path.endswith(ext) for ext in gif_extensions)
 
 class PhotoClassifier:
     def __init__(self, master):
@@ -303,8 +309,51 @@ class PhotoClassifier:
     def display_media(self, file_path):
         if is_video_file(file_path):
             self.display_video(file_path)
+        elif is_gif_file(file_path):
+            self.display_gif(file_path)
         else:
             self.display_photo(file_path)
+
+    def display_gif(self, file_path):
+        self.stop_playing()  # 停止之前的播放
+
+        # 使用 imageio 读取 gif 帧和元数据
+        try:
+            gif_reader = imageio.get_reader(str(file_path))
+            gif_frames = [frame for frame in gif_reader]
+            fps = gif_reader.get_meta_data().get('fps', 10) * 2  # 获取帧率，默认为10
+        except Exception as e:
+            print(f"Error reading gif: {e}")
+            return
+
+        if not gif_frames:
+            print("No frames found in gif.")
+            return
+
+        # 转换为 OpenCV 格式（RGB → BGR）
+        self.gif_frames = [cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) for frame in gif_frames]
+        self.gif_index = 0
+        self.gif_delay = int(1000 / fps)  # 计算每帧的延迟时间
+        self.play_gif_frame()
+
+    def play_gif_frame(self):
+        if not hasattr(self, 'gif_frames') or not self.gif_frames:
+            return
+
+        frame = self.gif_frames[self.gif_index]
+        h, w = frame.shape[:2]
+        new_w, new_h = self.calculate_scale(h, w)
+
+        resized = cv2.resize(frame, (new_w, new_h))
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        img = Image.fromarray(rgb)
+        imgtk = ImageTk.PhotoImage(image=img)
+
+        self.media_label.configure(image=imgtk)
+        self.media_label.image = imgtk  # 避免被垃圾回收
+
+        self.gif_index = (self.gif_index + 1) % len(self.gif_frames)
+        self.after_id = self.master.after(self.gif_delay, self.play_gif_frame)  # 使用帧率计算的延迟时间
 
     def stop_playing(self):
         if self.after_id:
