@@ -9,6 +9,7 @@ import json
 import imageio
 import pillow_heif
 import time
+from collections import defaultdict
 
 def is_video_file(file_path):
     video_extensions = ['.mp4', '.avi', '.mov']  # 视频文件扩展名列表
@@ -116,46 +117,62 @@ class PhotoClassifier:
                              "- 会在当前目录创建jsondata文件夹以存储数据\n"
                              "- 请不要移动照片的位置和改名以确保数据准确。\n")
 
-    def find_live_photos(self, media_paths):
-        live_photos = []  # 存储找到的Live照片对
+    def find_live_photos(media_paths):
+        live_photos = []
         photo_exts = ['.JPG', '.HEIC']
+        
+        # 1. 按目录分组文件路径
+        folder_files = defaultdict(set)
+        for path in media_paths:
+            folder = os.path.normpath(os.path.dirname(path))
+            filename = os.path.basename(path)
+            folder_files[folder].add(filename)
 
-        # 先统一标准化路径并转为小写：建立一个 set 加速查询
-        normalized_paths = {os.path.normpath(p) for p in media_paths}
-
-        for mov_path in normalized_paths:
-            if mov_path.upper().endswith(".MOV"):
-                base_path, _ = os.path.splitext(mov_path)
-                for ext in photo_exts:
-                    photo_candidate = os.path.normpath(base_path + ext)
-                    if photo_candidate in normalized_paths:
-                        live_photos.append((base_path + ext, mov_path))  # 保留原始路径格式
-                        break
+        # 2. 遍历每个文件夹内部的 .mov 文件
+        for folder, files in folder_files.items():
+            for file in files:
+                if file.upper().endswith('.MOV'):
+                    name, _ = os.path.splitext(file)
+                    for ext in photo_exts:
+                        photo_name = name + ext
+                        if photo_name in files:
+                            photo_path = os.path.normpath(os.path.join(folder, photo_name))
+                            mov_path = os.path.normpath(os.path.join(folder, file))
+                            live_photos.append((photo_path, mov_path))
+                            break  # 找到一个配对就不再尝试其他扩展名
 
         return live_photos
 
 
     def find_apple_edited_origins(self, media_paths):
         """
-        查找所有有苹果风格编辑版本的原图路径。
-        规则：编辑图名在首个数字前插入 'E'，扩展名相同。
-        返回：原图路径列表（每个原图都有对应的编辑版本）
+        在每个子文件夹中查找具有苹果风格编辑命名的图像（如 IMG_E1234.JPG），
+        并确认是否有同文件夹内的原图（如 IMG_1234.JPG）存在。
+        返回原图路径列表，并更新 self.apple_edited_pic_paths。
         """
 
-        filename_to_path = {os.path.basename(p): p for p in media_paths}
-        origins = set()
-
+        # 1. 按文件夹分组文件名
+        folder_to_files = defaultdict(dict)
         for path in media_paths:
-            fname = os.path.basename(path)
-            name, ext = os.path.splitext(fname)
+            folder = os.path.normpath(os.path.dirname(path))
+            filename = os.path.basename(path)
+            folder_to_files[folder][filename] = path
 
-            # 匹配编辑图命名（如 IMG_E1234.JPG、ABCDE9999.HEIC）
-            match = re.match(r'^(.+?)E(\d.*)$', name)
-            if match:
-                orig_name = match.group(1) + match.group(2) + ext
-                if orig_name in filename_to_path:
-                    origins.add(filename_to_path[orig_name])
-                    self.apple_edited_pic_paths.append(path)  # 添加编辑图路径到列表
+        origins = set()
+        self.apple_edited_pic_paths = []  # 重置清空（如果是类变量）
+
+        # 2. 遍历每个文件夹内的文件
+        for folder, file_map in folder_to_files.items():
+            for filename in file_map:
+                name, ext = os.path.splitext(filename)
+
+                # 检测是否为编辑图（如 IMG_E1234.JPG）
+                match = re.match(r'^(.+?)E(\d.*)$', name)
+                if match:
+                    orig_name = match.group(1) + match.group(2) + ext
+                    if orig_name in file_map:
+                        origins.add(file_map[orig_name])  # 添加原图路径
+                        self.apple_edited_pic_paths.append(file_map[filename])  # 添加编辑图路径
 
         return list(origins)
 
