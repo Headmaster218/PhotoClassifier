@@ -1,7 +1,9 @@
+import queue
+import subprocess
 import threading
 import time
 import tkinter as tk
-from tkinter import ttk, simpledialog, messagebox, filedialog
+from tkinter import PhotoImage, ttk, simpledialog, messagebox, filedialog
 from PIL import Image, ImageTk, UnidentifiedImageError, ImageDraw, ImageFont, ImageSequence
 import pillow_heif  # 加载 pillow-heif 插件
 import numpy as np
@@ -10,11 +12,13 @@ import json
 from pypinyin import lazy_pinyin  # Import lazy_pinyin for pinyin sorting
 import os, re  # 用于文件路径处理和正则表达式匹配
 import shutil  # 用于文件复制
+from pathlib import Path
 
 class PhotoViewer(tk.Toplevel):
     def __init__(self, master, photo_path, all_categories, photo_categories, update_callback):
         super().__init__(master)
         self.photo_path = photo_path
+        self.original_path = photo_path  # 保存原始路径以便后续使用
         self.all_categories = all_categories
         self.photo_categories = photo_categories
         self.update_callback = update_callback
@@ -26,17 +30,41 @@ class PhotoViewer(tk.Toplevel):
         self.pic_target_h = self.screen_height * 0.85  # Adjusted height to 85% of screen height
         self.geometry(f"{int(self.pic_target_w)}x{int(self.pic_target_h)+100}")  # Dynamically set window size
 
-        # 使用open以二进制方式读取图片数据
-        with open(photo_path, 'rb') as file:
-            img_data = file.read()
-            img_array = np.asarray(bytearray(img_data), dtype=np.uint8)
-            self.cv_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)  # 使用cv2.IMREAD_COLOR确保图像是以彩色模式读取
+        ext = os.path.splitext(photo_path)[1].lower()
 
-        # 确保图像非空
-        if self.cv_img is not None:
-            # 只需要进行一次颜色空间转换
+        # 判断类型
+        if ext in [".mp4", ".mov", ".avi", ".gif"]:
+            self.open_with_system_player(photo_path)
+            self.destroy()
+        
+        self.photo_path = './playing.png'
+
+        # =============== 处理图片（含 HEIC） ================
+        try:
+            if ext in [".heic", ".heif"] and pillow_heif:
+                heif_file = pillow_heif.read_heif(str(photo_path))
+                img_pil = Image.frombytes(
+                    heif_file.mode,
+                    heif_file.size,
+                    heif_file.data
+                )
+                self.cv_img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+            else:
+                with open(photo_path, 'rb') as file:
+                    img_data = file.read()
+                    img_array = np.asarray(bytearray(img_data), dtype=np.uint8)
+                    self.cv_img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+
+            if self.cv_img is None:
+                raise ValueError("图片解码失败")
+
             self.cv_img = cv2.cvtColor(self.cv_img, cv2.COLOR_BGR2RGB)
             self.img_height, self.img_width = self.cv_img.shape[:2]
+
+        except Exception as e:
+            print(f"❌ 图像加载失败: {e}")
+            self.destroy()
+            return
 
         # 初始化图像缩放比例和位置
         self.scale = 1.0
@@ -65,6 +93,13 @@ class PhotoViewer(tk.Toplevel):
 
         self.change_category_button = tk.Button(self, text="修改分类", command=self.change_category)
         self.change_category_button.pack()
+
+    def open_with_system_player(self, file_path):
+        # 使用系统默认播放器播放视频
+        try:
+            subprocess.Popen(['start', '', str(file_path)], shell=True)
+        except Exception as e:
+            messagebox.showerror("错误", f"调用系统播放器失败：{e}")
 
     def show_edited_image(self, event):
         fname = os.path.basename(self.photo_path)
@@ -157,7 +192,7 @@ class PhotoViewer(tk.Toplevel):
                 return
             if set(new_categories) != set(self.photo_categories):
                 self.photo_categories = new_categories
-                self.update_callback(self.photo_path, new_categories)
+                self.update_callback(self.original_path, new_categories)
                 self.info_label.config(text=f"当前分类: {', '.join(new_categories)}")
 
 class ClassifiedPhotoAlbum:
@@ -226,16 +261,69 @@ class ClassifiedPhotoAlbum:
 
         # 更新所有下拉框的选项
         self.update_comboboxes()
+        
+        self.thumb_dir = Path(".Thumb")
+        self.thumb_dir.mkdir(exist_ok=True)
+
+        # 初始化队列
+        self.thumb_task_queue = queue.Queue()
+        self.thumb_result_queue = queue.Queue()
+
+        # 加载所有缩略图任务
+        self.load_thumbnail_tasks()
+
+        # 启动后台线程（生成缩略图）
+        threading.Thread(target=self.thumbnail_worker, daemon=True).start()
+
+        # 主线程每200ms检查一次结果队列，刷新UI或日志
+        self.master.after(200, self.check_thumb_result)
 
         messagebox.showinfo("使用说明", "欢迎使用分类相册应用！\n\n"
-                                "1. 从左上角下拉框来选择想看的图片。\n"
-                                "2. 点击图片可以查看大图。\n"
-                                "3. 大图界面使用滚轮缩放图片。\n"
-                                "4. 大图界面拖动鼠标平移图片。\n"
-                                "5. 大图界面点击'修改分类'按钮来更新图片分类。\n"
-                                "6. 将鼠标悬停在带有'Live'标签的图片上可以预览视频。\n"
-                                "7. 使用导出结果按钮来导出当前筛选的图片。\n\n"
-                                "请尽情探索更多功能！")
+                        "1. 从左上角下拉框来选择想看的图片。\n"
+                        "2. 点击图片可以查看大图。\n"
+                        "3. 大图界面使用滚轮缩放图片。\n"
+                        "4. 大图界面拖动鼠标平移图片。\n"
+                        "5. 大图界面点击'修改分类'按钮来更新图片分类。\n"
+                        "6. 将鼠标悬停在带有'Live'标签的图片上可以预览视频。\n"
+                        "7. 使用导出结果按钮来导出当前筛选的图片。\n\n"
+                        "请尽情探索更多功能！")
+        
+    def check_thumb_result(self):
+        while not self.thumb_result_queue.empty():
+            src, dst, status = self.thumb_result_queue.get()
+            if status == "ok":
+                print(f"✅ 缩略图完成: {dst}")
+            else:
+                print(f"❌ 缩略图失败: {src} - {status}")
+        self.master.after(200, self.check_thumb_result)
+
+    def thumbnail_worker(self):
+        while True:
+            try:
+                src, dst = self.thumb_task_queue.get(timeout=1)
+                if generate_thumbnail(src, dst):
+                    self.thumb_result_queue.put((src, dst, "ok"))
+                else:
+                    self.thumb_result_queue.put((src, dst, f"err: {e}"))
+            except queue.Empty:
+                continue
+            except Exception as e:
+                self.thumb_result_queue.put((src, dst, f"err: {e}"))
+
+
+    def load_thumbnail_tasks(self):
+        with open(self.classifications_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        for path_str in data:
+            p = Path(path_str)
+            if not p.exists():
+                continue
+            if p.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.heic', '.mp4', '.mov']:
+                dst = self.thumb_dir / (p.name + ".jpg")
+                if not dst.exists():
+                    self.thumb_task_queue.put((p, dst))
+
 
     def category_selected(self, event=None):
         filter_type = self.filter_type_combobox.get()
@@ -338,8 +426,45 @@ class ClassifiedPhotoAlbum:
             file_extension = os.path.splitext(photo_path)[1].lower()
             photo_tags = self.photos.get(photo_path, [])
 
+            thumb_path = Path(".Thumb") / (Path(photo_path).name + ".jpg")
 
-            if file_extension in ['.jpg', '.jpeg', '.png', '.heic']:  # 增加 HEIC 支持
+            if thumb_path.exists():
+                try:
+                    img = Image.open(thumb_path)
+                    img = img.resize(self.target_thumb_size, Image.ANTIALIAS)
+                    draw = ImageDraw.Draw(img, "RGBA")
+
+                    if file_extension in ['.mp4', '.mov']:  # 视频文件
+                        font = ImageFont.truetype("arial.ttf", 20)  # 指定字体和大小
+                        text = "Video"
+                        textwidth, textheight = draw.textbbox((0, 0), text, font=font)[2:4]  # 获取文本宽高
+                        # 在图片上绘制半透明矩形作为文本背景
+                        draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255,255,255,128))
+                        # 在半透明矩形上绘制文本
+                        draw.text((10, 10), text, fill=(0,255,0,255), font=font)
+
+
+                    if "Live" in photo_tags:
+                        font = ImageFont.truetype("arial.ttf", 20)
+                        text = "Live"
+                        _, _, textwidth, textheight = font.getbbox(text)
+                        draw.rectangle([(5, 5), (5 + textwidth + 10, 5 + textheight + 10)], fill=(255, 255, 255, 128))
+                        draw.text((10, 10), text, fill=(255, 0, 0, 255), font=font)
+
+                    if "已编辑" in photo_tags:
+                        font = ImageFont.truetype("arial.ttf", 20)
+                        text = "Edited"
+                        _, _, textwidth, textheight = font.getbbox(text)
+                        draw.rectangle([(70, 5), (70 + textwidth + 10, 5 + textheight + 10)], fill=(255, 255, 255, 128))
+                        draw.text((75, 10), text, fill=(0, 255, 0, 255), font=font)
+                    photo_image = ImageTk.PhotoImage(img)
+                    self.photo_images.append(photo_image)
+                except Exception:
+                    img = Image.new('RGB', self.target_thumb_size, color='gray')
+                    photo_image = ImageTk.PhotoImage(img)
+                    self.photo_images.append(photo_image)
+
+            elif file_extension in ['.jpg', '.jpeg', '.png', '.heic']:  # 增加 HEIC 支持
                 try:
                     if file_extension == '.heic':
                         heif_file = pillow_heif.read_heif(photo_path)
@@ -436,6 +561,9 @@ class ClassifiedPhotoAlbum:
                 button.bind("<Leave>", lambda event: self.stop_live_video())
 
         self.update_pagination_info()
+
+
+
 
     def start_live_video(self, event, file_path):
         # 如果有视频正在播放，先停止它
@@ -556,7 +684,69 @@ class ClassifiedPhotoAlbum:
             self.current_page -= 1
             self.display_photos()
 
+
+def resize_to_max(img, max_dim):
+    """缩放图像比例不变，最大边不超过 max_dim"""
+    w, h = img.size
+    scale = min(max_dim / w, max_dim / h, 1.0)
+    return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+def generate_thumbnail(img_path, thumb_path):
+    ext = img_path.suffix.lower()
+    try:
+        if ext in ['.jpg', '.jpeg', '.png', '.gif']:
+            img = Image.open(img_path)
+        elif ext == '.heic':
+            heif_file = pillow_heif.read_heif(str(img_path))
+            img = Image.frombytes(heif_file.mode, heif_file.size, heif_file.data)
+        elif ext in ['.mp4', '.mov']:
+            cap = cv2.VideoCapture(str(img_path))
+            ret, frame = cap.read()
+            cap.release()
+            if not ret:
+                print(f"⚠️ 视频无法读取: {img_path}")
+                return
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame)
+        else:
+            print(f"⏩ 不支持的类型: {img_path}")
+            return
+
+        img = resize_to_max(img, 300)
+        thumb_path.parent.mkdir(parents=True, exist_ok=True)
+        img.convert("RGB").save(thumb_path, format="JPEG", quality=80)
+        print(f"✅ 缩略图保存: {thumb_path}")
+
+    except (UnidentifiedImageError, Exception) as e:
+        print(f"❌ 生成失败: {img_path}，错误：{e}")
+        return False
+
+def build_thumbnails_from_json(json_path, thumb_dir=".Thumb"):
+    thumb_dir = Path(thumb_dir)
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    for original_path in data:
+        src_path = Path(original_path)
+        if not src_path.exists():
+            print(f"⚠️ 文件不存在: {src_path}")
+            continue
+
+        if src_path.suffix.lower() not in ['.jpg', '.jpeg', '.png', '.gif', '.heic', '.mp4', '.mov']:
+            continue
+
+
+        thumb_name = f"{src_path.name}.jpg"
+        thumb_path = Path(thumb_dir) / thumb_name
+
+        if thumb_path.exists():
+            print(f"⏭️ 已存在缩略图: {thumb_path}")
+            continue
+
+        generate_thumbnail(src_path, thumb_path)
+
 def main():
+    # build_thumbnails_from_json("jsondata/classifications.json", ".Thumb")
     root = tk.Tk()
     root.title("分类相册")
     app = ClassifiedPhotoAlbum(root, "jsondata/classifications.json")
