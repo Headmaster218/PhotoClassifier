@@ -42,7 +42,7 @@ class PhotoClassifier:
         self.video_length = 0
         self.current_media_index = -1
         self.label_buttons = []
-        self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./~!@#$%^&*()_+QWERTYUIOP\{\}|ASDFGHJKL:\"ZXCVBNM<>?"  # 按键绑定到分类标签
+        self.key_bindings = "`1234567890-=\\qwertyuiop[]asdfghjkl;'zxcvbnm,./~!@#$%^&*()_+|QWERTYUIOP\{\}ASDFGHJKL:\"ZXCVBNM<>?"  # 按键绑定到分类标签
 
         # 获取屏幕分辨率
         self.screen_width = master.winfo_screenwidth()
@@ -525,7 +525,8 @@ class PhotoClassifier:
 
     def calculate_row_column_for_new_label(self, key_binding_index):
         # 定义每行最多放置的按键数量
-        keys_per_row = [14, 12, 11, 10, 10, 9, 7]  # 根据实际情况调整
+        keys_per_row = [14, 12, 11, 10, 14, 12, 11, 10]  # 根据实际情况调整
+        row_offsets = [0, 1, 2, 2, 0, 1, 2, 2]  # 每行的偏置值
         total_keys = sum(keys_per_row)
 
         # 计算key_binding_index所在的“虚拟”总行数和列数
@@ -539,9 +540,9 @@ class PhotoClassifier:
         for row, keys_count in enumerate(keys_per_row):
             if position_in_cycle < total_keys_passed + keys_count:
                 # 计算列位置
-                column = position_in_cycle - total_keys_passed
-                # 计算实际的“虚拟”行数
-                actual_row = row + len(keys_per_row) * cycle_index
+                column = position_in_cycle - total_keys_passed + row_offsets[row]
+                # 计算实际的“虚拟”行数，并添加偏置
+                actual_row = row + len(keys_per_row) * cycle_index 
                 return actual_row, column
             total_keys_passed += keys_count
 
