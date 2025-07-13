@@ -115,26 +115,24 @@ class PhotoClassifier:
                              "- 会在当前目录创建jsondata文件夹以存储数据\n"
                              "- 请不要移动照片的位置和改名以确保数据准确。\n")
 
-    def find_live_photos(self,media_paths):
+    def find_live_photos(self, media_paths):
         live_photos = []  # 存储找到的Live照片对
-        photo_exts = ['.jpg', '.jpeg', '.heic']  # 常见的图片文件扩展名列表
+        photo_exts = ['.JPG', '.HEIC']
 
-        for mov_path in media_paths:
-            # 只处理.MOV文件
-            if mov_path.lower().endswith(".mov"):
+        # 先统一标准化路径并转为小写：建立一个 set 加速查询
+        normalized_paths = {os.path.normpath(p) for p in media_paths}
+
+        for mov_path in normalized_paths:
+            if mov_path.upper().endswith(".MOV"):
                 base_path, _ = os.path.splitext(mov_path)
-
-                # 尝试找到与.MOV文件同名的照片文件
                 for ext in photo_exts:
-                    photo_path = base_path + ext
-                    # 检查构造的照片文件路径是否存在于媒体文件列表中
-                    # 这里需要确保大小写匹配，因为文件系统可能区分大小写
-                    if any(photo_path.lower() == p.lower() for p in media_paths):
-                        live_photos.append((photo_path, mov_path))  # 将找到的文件对添加到结果列表中
-                        break  # 找到匹配的照片文件后不再继续查找其他扩展名
+                    photo_candidate = os.path.normpath(base_path + ext)
+                    if photo_candidate in normalized_paths:
+                        live_photos.append((base_path + ext, mov_path))  # 保留原始路径格式
+                        break
 
         return live_photos
-    
+
 
     def find_apple_edited_origins(self, media_paths):
         """
@@ -159,7 +157,6 @@ class PhotoClassifier:
                     self.apple_edited_pic_paths.append(path)  # 添加编辑图路径到列表
 
         return list(origins)
-
 
     def save_path(self, new_path):
         data = {'image_path': new_path}
@@ -244,20 +241,23 @@ class PhotoClassifier:
             current_media_path = self.media_paths[self.current_media_index]
             selected_labels = [label for label, btn_var in self.label_buttons if btn_var.get()]
 
-            # 检查当前照片是否为Live照片，如果是，则自动添加"Live"标签
-            if any(current_media_path in pair for pair in self.live_pics_paths):
-                selected_labels.append("Live")  # 添加"Live"标签
+            auto_tags = {"Live", "已编辑"}
 
-            # 检查当前照片是否为苹果编辑的照片，如果是，则自动添加"Apple Edited"标签
+            # 自动标签判断
+            if any(current_media_path in pair for pair in self.live_pics_paths):
+                selected_labels.append("Live")
             if any(current_media_path == path for path in self.apple_original_pic_paths):
                 selected_labels.append("已编辑")
 
-            # 仅当有选中的标签时，才保存当前图片的分类
-            if selected_labels:  # 检查selected_labels非空
+            # 判断是否包含非自动标签
+            non_auto_labels = [label for label in selected_labels if label not in auto_tags]
+
+            # 仅当存在非自动标签时才保存分类
+            if non_auto_labels:
                 self.classifications[current_media_path] = selected_labels
             else:
-                # 如果没有选中的标签，则确保不保存当前图片路径
                 self.classifications.pop(current_media_path, None)
+
 
             # 每10张图片保存一次分类结果和进度，或者在最后一张图片时保存
             if self.current_media_index % 10 == 0 or self.current_media_index == len(self.media_paths) - 1:
@@ -275,8 +275,9 @@ class PhotoClassifier:
 
             next_media_path = self.media_paths[self.current_media_index]
             # 如果是Live照片的视频部分，则跳过
-            if any(next_media_path == mov_path for _, mov_path in self.live_pics_paths):
-                continue  # 跳过这个MOV文件
+            if next_media_path.endswith('.MOV'):
+                if any(next_media_path == mov_path for _, mov_path in self.live_pics_paths):
+                    continue  # 跳过这个MOV文件
 
             # 如果是苹果编辑的照片，则跳过
             if next_media_path in self.apple_edited_pic_paths:
@@ -297,6 +298,7 @@ class PhotoClassifier:
         for _, btn_var in self.label_buttons:
             btn_var.set(False)
         media_path = self.media_paths[self.current_media_index]
+        self.media_path_label.config(text=f"当前媒体路径：{media_path}")  # 更新媒体路径标签
         self.display_media(media_path)
         self.update_progress_display()
 
@@ -373,6 +375,7 @@ class PhotoClassifier:
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         fps = self.cap.get(cv2.CAP_PROP_FPS)
         frame_skip = int(fps/5)  # 定义跳过的帧数
+        frame_skip = 0  # 定义跳过的帧数
         if self.cap:
             ret, frame = self.cap.read()
             h, w = frame.shape[:2]
@@ -412,49 +415,10 @@ class PhotoClassifier:
             # 简洁稳定的延时策略，确保不卡顿也不频繁
             fps = self.cap.get(cv2.CAP_PROP_FPS)
             delay = max(int(1000 / fps * (frame_skip + 1)), 30)
+            delay = 15
             self.after_id = self.master.after(delay, lambda: self.update_frame(frame_skip, new_w, new_h))
         else:
             self.display_video(self.media_paths[self.current_media_index])
-
-
-
-    # def update_frame(self, frame_skip, new_w, new_h):
-    #     if self.cap and self.cap.isOpened():
-
-    #         start_time = time.time()  # 获取开始时间
-
-    #         total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))  # 获取视频总帧数
-    #         current_frame_number = int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))  # 获取当前帧号
-    #         new_frame_number = current_frame_number + frame_skip  # 计算新的帧号
-
-    #         # 检查计算得出的新帧号是否超出视频总帧数
-    #         if new_frame_number >= total_frames:
-    #             # 如果超出，重置到视频的开始
-    #             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    #         else:
-    #             # 否则，设置到计算得出的新帧号
-    #             self.cap.set(cv2.CAP_PROP_POS_FRAMES, new_frame_number)
-
-    #         ret, frame = self.cap.read()  # 尝试读取下一帧
-    #         if not ret:  # 检查是否成功读取到帧
-    #             self.stop_playing()  # 如果没有帧可读，则停止播放
-    #             self.master.after(100, lambda: self.display_video(self.media_paths[self.current_media_index]))
-    #             return
-
-    #         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    #         img = Image.fromarray(frame)
-    #         img.thumbnail((new_w, new_h))
-    #         photo_image = ImageTk.PhotoImage(img)
-    #         self.media_label.configure(image=photo_image)
-    #         self.media_label.image = photo_image  # 避免垃圾回收
-
-    #         end_time = time.time()  # 获取结束时间
-            
-    #         time2delay = max(((1/self.cap.get(cv2.CAP_PROP_FPS))*(frame_skip+1)-(end_time-start_time))*300,20)
-
-    #         self.after_id = self.master.after(int(time2delay), lambda: self.update_frame(frame_skip,new_w,new_h))  #无法添加新标签，键盘快捷键失效。
-    #     else:
-    #         self.display_video(self.media_paths[self.current_media_index])
 
     def display_photo(self, image_path):
         # 尝试使用pathlib处理路径，以提高兼容性
